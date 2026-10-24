@@ -1,28 +1,26 @@
-name: Deploy Supabase Functions
+name: Deploy Supabase functions
 
+# Publica as edge functions quando algo em supabase/functions muda na main.
+# O banco é criado colando supabase/migrations/*_sflpro_push_v2.sql no SQL Editor,
+# e os segredos (SFL_API_KEY, VAPID_*) ficam em Edge Functions → Secrets no painel.
 on:
   push:
-    branches:
-      - main
-    paths:
-      - 'supabase/functions/**'
+    branches: [main]
+    paths: ['supabase/functions/**']
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    permissions: write-all
-
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       PROJECT_ID: ykbpkhsrxtnnisnorwhd
-
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Supabase CLI
-        uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@v1
         with:
           version: latest
-
-      - name: Deploy check-farm function
-        run: supabase functions deploy check-farm --project-ref $PROJECT_ID --no-verify-jwt
+      - name: Publicar funções
+        run: |
+          supabase functions deploy push-api --project-ref "$PROJECT_ID" --no-verify-jwt
+          supabase functions deploy push-tick --project-ref "$PROJECT_ID" --no-verify-jwt

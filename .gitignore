@@ -1,7 +1,12 @@
 node_modules/
-scratch/
-temp.json
+dist/
+dev-dist/
+.vercel/
+.env
+.env.*
+!.env.example
+supabase/.env
+supabase/.temp/
 android/
 www/
-
-
+*.log
