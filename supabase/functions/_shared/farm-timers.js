@@ -227,17 +227,16 @@ export const categoryLabel = (id, lang = 'pt') => (lang === 'en' ? CATEGORY_BY_I
 
 export function notificationText(group, lang = 'pt') {
   const label = categoryLabel(group.category, lang);
-  const qty = group.count > 1 ? `${group.count}× ` : '';
+  const n = group.count;
   if (lang === 'en') {
-    const titles = { animals: `${qty}${group.name} woke up`, daily: 'Daily chest unlocked', beehives: 'Beehive full of honey' };
-    return {
-      title: titles[group.category] ?? `${qty}${group.name} ready`,
-      body: group.category === 'daily' ? 'Your daily chest can be opened now.' : `${label}: ready to collect.`,
-    };
+    if (group.category === 'daily') return { title: 'Daily chest unlocked!', body: 'Open it before the day resets.' };
+    if (group.category === 'animals') return { title: `${group.name} is awake!`, body: `${n} ${n > 1 ? 'animals are' : 'animal is'} ready · ${label}` };
+    return { title: `${group.name} ready!`, body: `${n} ready to collect · ${label}` };
   }
-  const titles = { animals: `${qty}${group.name} acordou`, daily: 'Baú diário liberado', beehives: 'Colmeia cheia de mel' };
-  return {
-    title: titles[group.category] ?? `${qty}${group.name} pronto`,
-    body: group.category === 'daily' ? 'Seu baú diário já pode ser aberto.' : `${label}: pode coletar agora.`,
-  };
+  if (group.category === 'daily') return { title: 'Baú diário liberado!', body: 'Abra antes de virar o dia.' };
+  if (group.category === 'animals') return { title: `${group.name} acordou!`, body: `${n} ${n > 1 ? 'animais prontos' : 'animal pronto'} · ${label}` };
+  return { title: `${group.name} pronto!`, body: `${n} ${n > 1 ? 'prontos' : 'pronto'} para coletar · ${label}` };
 }
+
+/** Uma notificação por item: um aviso novo de "Wood" substitui o anterior em vez de empilhar. */
+export const displayTag = g => `${g.category}:${g.name}`;

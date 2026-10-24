@@ -1,5 +1,5 @@
 import { SUPABASE_URL, SUPABASE_KEY, VAPID_PUBLIC_KEY } from '../config.js';
-import { groupTimers, isWanted, notificationText } from '../../supabase/functions/_shared/farm-timers.js';
+import { displayTag, groupTimers, isWanted, notificationText } from '../../supabase/functions/_shared/farm-timers.js';
 import { itemImage } from './format.js';
 import { getSettings } from './store.js';
 import { t } from '../i18n.js';
@@ -64,11 +64,11 @@ export async function sendTest(endpoint) {
   return callServer({ action: 'test', endpoint });
 }
 
-export const notificationTag = g => `${g.category}:${g.name}:${Math.round(g.readyAt / 60_000)}`;
+export const notificationTag = displayTag;
 
 /**
- * Enquanto o app está aberto, dispara as notificações no segundo exato.
- * Usa a mesma tag do servidor, então o push que chegar depois substitui em vez de duplicar.
+ * Aviso no segundo exato, só para quem não ativou o push (senão o servidor já avisa e
+ * os dois chegariam juntos). Usa a mesma tag do servidor, uma por item.
  */
 export function scheduleLocal(timers, prefs, { sound, lang }) {
   if (!pushSupported() || Notification.permission !== 'granted') return () => {};
@@ -78,7 +78,10 @@ export function scheduleLocal(timers, prefs, { sound, lang }) {
     .map(g => setTimeout(async () => {
       const reg = await navigator.serviceWorker.ready;
       const { title, body } = notificationText(g, lang ?? 'pt');
-      reg.showNotification(title, { body, icon: itemImage(g.image), badge: '/icons/favicon-64.png', tag: notificationTag(g), renotify: true, silent: !sound, data: { url: '/?tab=farm' } });
+      const options = { body, icon: itemImage(g.image), badge: '/icons/badge-96.png', tag: notificationTag(g), renotify: true, silent: !sound, data: { url: '/?tab=farm' } };
+      // O service worker monta o ícone nítido; sem ele, mostra direto.
+      if (reg.active) reg.active.postMessage({ type: 'SHOW', title, options });
+      else reg.showNotification(title, options);
     }, g.readyAt - now));
   return () => handles.forEach(clearTimeout);
 }

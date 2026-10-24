@@ -4,6 +4,7 @@
 const ALLOWED_HOSTS = new Set(['sfl.world', 'api.sunflower-land.com']);
 
 function cacheSeconds(url) {
+  if (url.pathname.startsWith('/img/')) return 60 * 60 * 24 * 7;
   if (url.hostname === 'sfl.world') return 60;
   if (url.pathname.startsWith('/community/farms/')) return 45;
   return 180;
@@ -36,7 +37,9 @@ export default async function handler(req, res) {
       await new Promise(r => setTimeout(r, 5_500));
       upstream = await fetch(target, { headers, signal: AbortSignal.timeout(15_000) });
     }
-    const body = await upstream.text();
+    // Imagens (usadas para montar o ícone da notificação) passam como binário.
+    const isImage = (upstream.headers.get('content-type') ?? '').startsWith('image/');
+    const body = isImage ? Buffer.from(await upstream.arrayBuffer()) : await upstream.text();
     const ttl = cacheSeconds(target);
     res.setHeader('Cache-Control', upstream.ok ? `public, s-maxage=${ttl}, stale-while-revalidate=${ttl * 4}` : 'no-store');
     res.setHeader('Content-Type', upstream.headers.get('content-type') ?? 'application/json');

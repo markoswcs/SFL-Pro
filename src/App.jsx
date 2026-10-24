@@ -126,9 +126,9 @@ function Shell() {
 
   const timers = useMemo(() => extractTimers(data.farm), [data.farm]);
   useEffect(() => {
-    if (!settings.localAlerts) return undefined;
+    if (!settings.localAlerts || settings.pushEndpoint) return undefined;
     return scheduleLocal(timers, settings.prefs, { sound: settings.sound, lang: settings.lang });
-  }, [timers, settings.prefs, settings.localAlerts, settings.sound, settings.lang]);
+  }, [timers, settings.prefs, settings.localAlerts, settings.sound, settings.lang, settings.pushEndpoint]);
 
   const readyCount = useMemo(() => groupTimers(timers).filter(g => g.readyAt <= now).reduce((n, g) => n + g.count, 0), [timers, now]);
   useEffect(() => {

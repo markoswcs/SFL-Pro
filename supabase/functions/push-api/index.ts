@@ -78,7 +78,7 @@ Deno.serve(async req => {
         const ok = await sendPush(device, {
           title: en ? 'All set 🌻' : 'Tudo certo por aqui 🌻',
           body: en ? 'You will get alerts like this when something is ready.' : 'Você vai receber avisos assim quando algo ficar pronto.',
-          icon: 'https://sfl.world/img/source/Sunflower.png',
+          icon: '/icons/icon-192.png',
           tag: 'sflpro-test',
         });
         return ok ? json({ ok: true }) : json({ error: 'O navegador recusou o envio. Desative e ative de novo.' }, 502);

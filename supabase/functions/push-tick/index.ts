@@ -1,7 +1,7 @@
 // Roda a cada 15 segundos pelo pg_cron.
 // 1) Relê em lote as fazendas cuja hora de atualizar chegou e guarda os timers.
 // 2) Envia push para tudo o que ficou pronto, respeitando as preferências de cada aparelho.
-import { groupTimers, isWanted, notificationText } from '../_shared/farm-timers.js';
+import { displayTag, groupTimers, isWanted, notificationText } from '../_shared/farm-timers.js';
 import { db, fetchFarms, itemImage, json, sendPush, storeTimers, type Device } from '../_shared/server.ts';
 
 const REFRESH_MS = 5 * 60_000; // a mesma fazenda é relida a cada 5 min para pegar o que foi plantado
@@ -98,7 +98,7 @@ async function dispatch() {
       for (const g of wanted) {
         const { title, body } = notificationText(g, device.prefs?.lang === 'en' ? 'en' : 'pt');
         // O ícone é a arte do próprio item (pedra, trigo, vaca…); o aparelho baixa a imagem ao exibir.
-        await sendPush(device, { title, body, icon: itemImage(g.image), tag: tagOf(g), url: '/?tab=farm', timestamp: g.readyAt }) && sent++;
+        await sendPush(device, { title, body, icon: itemImage(g.image), tag: displayTag(g), url: '/?tab=farm', timestamp: g.readyAt }) && sent++;
       }
     }
   }
