@@ -93,6 +93,11 @@ export default function Settings({ settings, install }) {
             <div className="grow"><div className="title">{t('settings.install')}</div><div className="sub">{install.installed ? t('settings.installed') : t('settings.installSub')}</div></div>
             {install.available && <button className="btn btn-sun btn-sm" onClick={install.prompt}>{t('install.action')}</button>}
           </div>
+          <a className="pref" href="https://github.com/markoswcs/SFL-Pro" target="_blank" rel="noreferrer">
+            <Icon name="github" width="26" height="26" />
+            <div className="grow"><div className="title">{t('settings.github')}</div><div className="sub">{t('settings.githubSub')}</div></div>
+            <Icon name="external" width="18" height="18" className="chev-r" />
+          </a>
           <div className="pref">
             <Icon name="info" width="26" height="26" />
             <div className="grow"><div className="title">{t('tour.replay')}</div><div className="sub">{t('tour.replaySub')}</div></div>

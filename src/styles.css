@@ -568,3 +568,6 @@ button.card, .ready-chip { transition: transform .15s var(--ease), border-color 
   .next { padding: 14px; }
   .next .big { font-size: 22px; }
 }
+
+a.pref { color: inherit; }
+a.pref:hover .title { color: var(--sun); }
