@@ -59,7 +59,20 @@ export async function storeTimers(farmId: number, farm: unknown) {
     }
     if (error) throw error;
   }
+  await recordPurchases(farmId, farm).catch(e => console.error('compras falharam', (e as Error).message));
   return rows.length;
+}
+
+/** Copia as ofertas de compra aceitas: depois que o jogador coleta, o jogo apaga o preço. */
+async function recordPurchases(farmId: number, farm: any) {
+  const rows = Object.entries(farm?.trades?.offers ?? {})
+    .filter(([, o]: [string, any]) => o?.fulfilledAt)
+    .map(([id, o]: [string, any]) => {
+      const [item, qty] = Object.entries(o.items ?? {})[0] ?? ['?', 0];
+      return { farm_id: farmId, offer_id: id, item, qty: Number(qty) || 0, sfl: Number(o.sfl ?? 0), bought_at: new Date(o.fulfilledAt).toISOString() };
+    });
+  if (!rows.length) return;
+  await db.from('sflpro_purchases').upsert(rows, { onConflict: 'farm_id,offer_id', ignoreDuplicates: true });
 }
 
 /**

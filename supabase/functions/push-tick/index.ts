@@ -8,10 +8,25 @@ const REFRESH_MS = 2 * 60_000; // a mesma fazenda é relida a cada 2 min para pe
 const BATCH = 40; // fazendas por chamada; o limite da resposta é 5,5 MB
 const SUMMARY_AFTER = 3; // mais que isso no mesmo minuto vira uma notificação só
 // Vendas e a ilha flutuante sempre chegam sozinhas: o valor recebido e a hora de fechar importam.
-const NEVER_SUMMARIZE = new Set(['sales', 'floatingIsland']);
+const NEVER_SUMMARIZE = new Set(['sales', 'offers', 'floatingIsland']);
+const PRICES_EVERY_MS = 30 * 60_000; // uma foto dos preços do mercado a cada 30 min
 
 const tagOf = (g: { category: string; name: string; readyAt: number; keys?: string[] }) =>
-  g.category === 'sales' ? `sales:${g.keys?.[0]}` : `${g.category}:${g.name}:${Math.round(g.readyAt / 60_000)}`;
+  g.category === 'sales' || g.category === 'offers' ? `${g.category}:${g.keys?.[0]}` : `${g.category}:${g.name}:${Math.round(g.readyAt / 60_000)}`;
+
+/** Guarda os preços P2P da sfl.world para o app mostrar o que valorizou e desvalorizou. */
+async function snapshotPrices() {
+  const { data: last, error } = await db.from('sflpro_prices').select('at').order('at', { ascending: false }).limit(1).maybeSingle();
+  if (error) return false; // tabela ainda não criada (migração 20261026120000)
+  if (last && Date.now() - new Date(last.at).getTime() < PRICES_EVERY_MS) return false;
+  const res = await fetch('https://sfl.world/api/v1/prices', { headers: { Accept: 'application/json', 'User-Agent': 'SFLPro/2.2' }, signal: AbortSignal.timeout(10_000) });
+  if (!res.ok) return false;
+  const p2p = (await res.json())?.data?.p2p;
+  if (!p2p || !Object.keys(p2p).length) return false;
+  await db.from('sflpro_prices').insert({ at: new Date().toISOString(), p2p });
+  await db.from('sflpro_prices').delete().lt('at', new Date(Date.now() - 60 * 86400_000).toISOString());
+  return true;
+}
 
 async function refreshFarms() {
   // Reserva as fazendas no banco (SKIP LOCKED) para duas execuções seguidas não lerem a mesma.
@@ -100,7 +115,7 @@ async function dispatch() {
       for (const g of solo) {
         const { title, body } = notificationText(g, lang, tz);
         // O ícone é a arte do próprio item (pedra, trigo, vaca…); o aparelho baixa a imagem ao exibir.
-        const url = g.category === 'sales' ? '/?tab=market&view=sales' : '/?tab=farm';
+        const url = g.category === 'sales' ? '/?tab=market&view=sales' : g.category === 'offers' ? '/?tab=market&view=buys' : '/?tab=farm';
         await sendPush(device, { title, body, icon: itemImage(g.image), tag: displayTag(g), url, timestamp: g.readyAt }) && sent++;
       }
     }
@@ -118,6 +133,7 @@ Deno.serve(async req => {
   const sentBefore = await dispatch();
   const farms = await refreshFarms();
   const sentAfter = await dispatch();
+  const prices = await snapshotPrices().catch(e => { console.error('preços falharam', (e as Error).message); return false; });
   await db.from('sflpro_sent').delete().lt('sent_at', new Date(Date.now() - 3 * 86400_000).toISOString());
-  return json({ ok: true, ...farms, sent: sentBefore + sentAfter, ms: Date.now() - started });
+  return json({ ok: true, ...farms, sent: sentBefore + sentAfter, prices, ms: Date.now() - started });
 });

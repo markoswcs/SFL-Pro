@@ -60,6 +60,12 @@ export async function disablePush() {
   await sub.unsubscribe();
 }
 
+/** Histórico dos preços P2P guardado pelo servidor: { t: [ms…], items: { Nome: [preço…] } }. */
+export const priceHistory = () => callServer({ action: 'prices' });
+
+/** Ofertas de compra aceitas que o servidor copiou desta fazenda. */
+export const farmPurchases = farmId => callServer({ action: 'purchases', farmId }).then(d => d.purchases ?? []);
+
 export async function sendTest(endpoint) {
   return callServer({ action: 'test', endpoint });
 }

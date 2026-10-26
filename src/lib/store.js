@@ -13,6 +13,8 @@ const DEFAULTS = {
   lang: null,
   game: 'sfl',
   yakkaName: '',
+  purchases: [],
+  sellGoal: 0.1,
 };
 
 function load() {

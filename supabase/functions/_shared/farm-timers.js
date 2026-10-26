@@ -67,6 +67,7 @@ export const CATEGORIES = [
   { id: 'daily', label: 'Baú diário', en: 'Daily chest', image: 'Treasure Key' },
   { id: 'floatingIsland', label: 'Floating Island', en: 'Floating Island', image: 'Love Charm' },
   { id: 'sales', label: 'Vendas no mercado', en: 'Market sales', image: 'Flower' },
+  { id: 'offers', label: 'Ofertas de compra aceitas', en: 'Accepted buy offers', image: 'Flower' },
 ];
 
 export const CATEGORY_BY_ID = Object.fromEntries(CATEGORIES.map(c => [c.id, c]));
@@ -219,6 +220,13 @@ export function extractTimers(farm, now = Date.now()) {
     push('sales', item, l.fulfilledAt, id, item, l.createdAt, Number(qty) || 1, { flower: Math.round(received * 1e6) / 1e6 });
   }
 
+  // Ofertas de compra que alguém aceitou: quem compra paga o valor da oferta, sem taxa.
+  for (const [id, o] of Object.entries(farm.trades?.offers ?? {})) {
+    if (!o?.fulfilledAt) continue;
+    const [item, qty] = Object.entries(o.items ?? {})[0] ?? ['Flower', 1];
+    push('offers', item, o.fulfilledAt, id, item, o.createdAt, Number(qty) || 1, { flower: Number(o.sfl ?? 0) });
+  }
+
   return out.sort((a, b) => a.readyAt - b.readyAt);
 }
 
@@ -289,6 +297,12 @@ export function notificationText(group, lang = 'pt', tz = 'America/Sao_Paulo') {
       const end = group.meta?.endAt ? time(group.meta.endAt) : '';
       return en ? { title: 'Floating Island is live!', body: end ? `Ends at ${end}` : 'Open now' } : { title: 'Floating Island aberta!', body: end ? `Fecha às ${end}` : 'Aberta agora' };
     }
+    case 'offers': {
+      const paid = group.meta?.flower ? fmt(group.meta.flower, lang) : null;
+      return en
+        ? { title: `Offer accepted: ${qty} ${group.name}!`, body: paid ? `You bought it for ${paid} FLOWER · claim it in game` : 'Claim it in game' }
+        : { title: `Oferta aceita: ${qty} ${group.name}!`, body: paid ? `Você comprou por ${paid} FLOWER · colete no jogo` : 'Colete no jogo' };
+    }
     case 'sales': {
       const got = group.meta?.flower ? fmt(group.meta.flower, lang) : null;
       return en
@@ -305,4 +319,4 @@ export function notificationText(group, lang = 'pt', tz = 'America/Sao_Paulo') {
 }
 
 /** Uma notificação por item: um aviso novo de "Wood" substitui o anterior em vez de empilhar. */
-export const displayTag = g => (g.category === 'sales' ? `sales:${g.keys?.[0] ?? g.key}` : `${g.category}:${g.name}`);
+export const displayTag = g => (g.category === 'sales' || g.category === 'offers' ? `${g.category}:${g.keys?.[0] ?? g.key}` : `${g.category}:${g.name}`);

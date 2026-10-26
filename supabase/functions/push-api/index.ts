@@ -85,6 +85,41 @@ Deno.serve(async req => {
         return ok ? json({ ok: true }) : json({ error: 'O navegador recusou o envio. Desative e ative de novo.' }, 502);
       }
 
+      case 'prices': {
+        // Histórico dos preços P2P em colunas: { t: [ms…], items: { Nome: [preço…] } }.
+        // Últimas 48 h de hora em hora, depois uma foto a cada 6 h até 30 dias.
+        const since = new Date(Date.now() - 30 * 86400_000).toISOString();
+        const { data, error } = await db.from('sflpro_prices').select('at, p2p').gte('at', since).order('at');
+        if (error) return json({ error: 'Histórico de preços indisponível.' }, 503);
+        const picked: { at: string; p2p: Record<string, number> }[] = [];
+        for (const row of data ?? []) {
+          const at = new Date(row.at).getTime();
+          const step = Date.now() - at < 48 * 3600_000 ? 3600_000 : 6 * 3600_000;
+          const prev = picked[picked.length - 1];
+          if (!prev || at - new Date(prev.at).getTime() >= step - 5 * 60_000) picked.push(row);
+        }
+        const last = data?.[data.length - 1];
+        if (last && picked[picked.length - 1] !== last) picked.push(last);
+        const items: Record<string, (number | null)[]> = {};
+        picked.forEach((row, i) => {
+          for (const [name, price] of Object.entries(row.p2p ?? {})) {
+            (items[name] ??= Array(picked.length).fill(null))[i] = Number(price);
+          }
+        });
+        return new Response(JSON.stringify({ t: picked.map(r => new Date(r.at).getTime()), items }), {
+          headers: { ...cors, 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=300' },
+        });
+      }
+
+      case 'purchases': {
+        const farmId = Number(String(body.farmId ?? '').replace(/\D/g, ''));
+        if (!farmId) return json({ error: 'Informe o Farm ID.' }, 400);
+        const { data, error } = await db.from('sflpro_purchases').select('offer_id, item, qty, sfl, bought_at')
+          .eq('farm_id', farmId).order('bought_at', { ascending: false }).limit(200);
+        if (error) return json({ error: 'Compras indisponíveis.' }, 503);
+        return json({ ok: true, purchases: data ?? [] });
+      }
+
       default:
         return json({ error: 'Ação desconhecida' }, 400);
     }
