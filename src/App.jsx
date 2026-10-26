@@ -24,8 +24,9 @@ function GameSwitch({ game, onChange }) {
   const t = useT();
   return (
     <div className="game-switch" role="tablist" aria-label={t('game.switch')}>
-      <button role="tab" aria-selected={game === 'sfl'} onClick={() => onChange('sfl')}><img src="/icons/icon-192.png" alt="" width="22" height="22" /> <span>Sunflower</span></button>
-      <button role="tab" aria-selected={game === 'yakka'} onClick={() => onChange('yakka')}><span className="yk-egg" aria-hidden="true" /> <span>Yakkamon</span></button>
+      {/* No celular só os ícones aparecem; o nome fica no aria-label e no title. */}
+      <button role="tab" aria-selected={game === 'sfl'} aria-label="Sunflower Land" title="Sunflower Land" onClick={() => onChange('sfl')}><ItemImg name="Sunflower" size={20} /> <span className="gs-name">Sunflower</span></button>
+      <button role="tab" aria-selected={game === 'yakka'} aria-label="Yakkamon" title="Yakkamon" onClick={() => onChange('yakka')}><span className="yk-egg" aria-hidden="true" /> <span className="gs-name">Yakkamon</span></button>
     </div>
   );
 }
@@ -175,10 +176,11 @@ function Shell() {
   return (
     <div className="app">
       <header className="topbar">
-        {settings.lang ? <GameSwitch game={game} onChange={switchGame} /> : <div className="brand"><img src="/icons/icon-192.png" alt="" width="34" height="34" /> SFL <b>Pro</b></div>}
+        <div className="brand"><img src="/icons/icon-192.png" alt="" width="34" height="34" /> <span className="brand-name">SFL <b>Pro</b></span></div>
+        {settings.lang && <GameSwitch game={game} onChange={switchGame} />}
         <span className="spacer" />
         {!needsSetup && game === 'sfl' && (
-          <span className={`sync-dot ${data.error ? 'err' : ''}`}><i /> {data.error ? t('top.error') : data.updatedAt ? t('top.live') : '…'}</span>
+          <span className={`sync-dot ${data.error ? 'err' : ''}`} title={data.error ? t('top.error') : t('top.live')}><i /> <span>{data.error ? t('top.error') : data.updatedAt ? t('top.live') : '…'}</span></span>
         )}
         <button className="support-btn" onClick={() => setSupport(true)}><Icon name="heart" /> <span>{t('top.support')}</span></button>
         {!needsSetup && game === 'sfl' && (
