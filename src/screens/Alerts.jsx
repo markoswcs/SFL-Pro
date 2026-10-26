@@ -16,6 +16,15 @@ const KNOWN = {
   sales: [],
 };
 
+// As categorias em blocos, para a lista de 24 interruptores não virar um paredão.
+const GROUPS = [
+  ['farming', ['crops', 'greenhouse', 'fruits', 'flowers']],
+  ['resources', ['trees', 'stones', 'iron', 'gold', 'crimstones', 'sunstones', 'oilReserves', 'salt']],
+  ['animals', ['animals', 'animalLove', 'beehives']],
+  ['production', ['composters', 'cooking', 'cropMachine', 'agingShed', 'craftingBox']],
+  ['events', ['daily', 'floatingIsland', 'sales', 'offers']],
+];
+
 function CategoryRow({ cat, prefs, names, lang, onToggleCat, onToggleItem }) {
   const t = useT();
   const label = categoryLabel(cat.id, lang);
@@ -159,10 +168,17 @@ export default function Alerts({ data, settings }) {
             <div className="grow"><div className="title">{t('alerts.master')}</div><div className="sub">{t('alerts.masterSub')}</div></div>
             <Switch checked={prefs.enabled !== false} onChange={v => updatePrefs(p => ({ ...p, enabled: v }))} label={t('alerts.master')} />
           </div>
-          {CATEGORIES.map(c => (
-            <CategoryRow key={c.id} cat={c} prefs={prefs} names={names[c.id].length ? names[c.id] : [c.image]} lang={settings.lang} onToggleCat={toggleCat} onToggleItem={toggleItem} />
-          ))}
         </div>
+        {GROUPS.map(([group, ids]) => (
+          <div key={group} className="pref-group">
+            <h3 className="pref-group-title">{t(`alerts.group.${group}`)}</h3>
+            <div className="list">
+              {ids.map(id => CATEGORIES.find(c => c.id === id)).filter(Boolean).map(c => (
+                <CategoryRow key={c.id} cat={c} prefs={prefs} names={names[c.id].length ? names[c.id] : [c.image]} lang={settings.lang} onToggleCat={toggleCat} onToggleItem={toggleItem} />
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
 
       <div className="section">

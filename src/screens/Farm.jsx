@@ -31,6 +31,33 @@ function TimerTile({ group, now, onOpen }) {
   );
 }
 
+/** Tudo o que dá para coletar agora, em fichas: o mais antigo primeiro. */
+function ReadyNow({ groups, now, onOpen }) {
+  const t = useT();
+  const ready = groups.filter(g => g.readyAt <= now).sort((a, b) => (a.firstAt ?? a.readyAt) - (b.firstAt ?? b.readyAt));
+  if (!ready.length) return null;
+  return (
+    <div className="section">
+      <div className="card ready-now">
+        <div className="row">
+          <span className="ready-dot" aria-hidden="true" />
+          <h3 className="grow">{t('ready.title', { n: ready.length })}</h3>
+          <span className="muted" style={{ fontSize: 12.5 }}>{t('ready.hint')}</span>
+        </div>
+        <div className="ready-chips">
+          {ready.map(g => (
+            <button key={g.keys[0]} className="ready-chip" onClick={() => onOpen(g)} title={g.name}>
+              <ItemImg name={g.image} size={24} />
+              <b>{num(qtyOf(g), 1)}</b>
+              <span className="ellipsis">{g.name}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function FloatingCard({ windows, now, onOpen }) {
   const t = useT();
   const open = windows.find(w => w.startAt <= now && w.endAt > now);
@@ -329,12 +356,15 @@ function ExpansionSheet({ exp, onClose }) {
   );
 }
 
-function FlowerSheet({ farm, land, exchange, onClose }) {
+function FlowerSheet({ farm, land, exchange, currency, onClose }) {
   const t = useT();
   const bal = Number(farm?.balance ?? land?.land?.balance ?? 0);
   const rows = ['brl', 'usd', 'eur'].filter(c => exchange?.sfl?.[c]);
   return (
     <Sheet open onClose={onClose} title="FLOWER">
+      <h3 className="sheet-sub" style={{ marginTop: 0 }}>{t('calc.title')}</h3>
+      <FlowerCalc exchange={exchange} currency={currency} />
+      <h3 className="sheet-sub">{t('detail.balanceIn')}…</h3>
       <div className="list">
         {rows.map(c => (
           <div className="list-row" key={c}>
@@ -430,7 +460,6 @@ export default function Farm({ data, settings, onOpenSettings }) {
         <Profile farm={farm} land={land} farmId={settings.farmId} />
         <Balances farm={farm} land={land} exchange={exchange} currency={settings.currency} onOpen={setSheet} />
       </div>
-      <div className="section" style={{ marginTop: 12 }}><FlowerCalc exchange={exchange} currency={settings.currency} /></div>
 
       {error && (
         <div className="section">
@@ -438,15 +467,8 @@ export default function Farm({ data, settings, onOpenSettings }) {
         </div>
       )}
 
-      {farm && (
-        <div className="section info-row">
-          <VipCard vip={vip} onOpen={() => setSheet('vip')} />
-          {exp && <ExpansionCard exp={exp} onOpen={() => setSheet('exp')} />}
-          <FloatingCard windows={windows} now={now} onOpen={() => setSheet('float')} />
-          <MutantCard info={mutants} now={now} onOpen={() => setSheet('mutants')} />
-        </div>
-      )}
 
+      {farm && <ReadyNow groups={groups} now={now} onOpen={setSheet} />}
       {farm && upcoming && (
         <div className="section">
           <button className="card next" data-tour="next" onClick={() => setSheet(upcoming)}>
@@ -461,6 +483,14 @@ export default function Farm({ data, settings, onOpenSettings }) {
               <div className="at">{t('farm.at', { time: clockTime(upcoming.readyAt) })}</div>
             </div>
           </button>
+        </div>
+      )}
+      {farm && (
+        <div className="section info-row">
+          <VipCard vip={vip} onOpen={() => setSheet('vip')} />
+          {exp && <ExpansionCard exp={exp} onOpen={() => setSheet('exp')} />}
+          <FloatingCard windows={windows} now={now} onOpen={() => setSheet('float')} />
+          <MutantCard info={mutants} now={now} onOpen={() => setSheet('mutants')} />
         </div>
       )}
 
@@ -512,7 +542,7 @@ export default function Farm({ data, settings, onOpenSettings }) {
       {sheet === 'exp' && exp && <ExpansionSheet exp={exp} onClose={() => setSheet(null)} />}
       {sheet === 'float' && <FloatingSheet windows={windows} farm={farm} now={now} onClose={() => setSheet(null)} />}
       {sheet === 'mutants' && <MutantSheet info={mutants} farm={farm} now={now} lang={lang} onClose={() => setSheet(null)} />}
-      {sheet === 'flower' &&<FlowerSheet farm={farm} land={land} exchange={exchange} onClose={() => setSheet(null)} />}
+      {sheet === 'flower' && <FlowerSheet farm={farm} land={land} exchange={exchange} currency={settings.currency} onClose={() => setSheet(null)} />}
       {sheet && typeof sheet === 'object' && <TimerSheet group={sheet} farm={farm} now={now} prefs={settings.prefs} lang={lang} onClose={() => setSheet(null)} />}
     </div>
   );

@@ -517,3 +517,54 @@ button.buy-card:hover { border-color: var(--line-2); }
 .tour-dots i.on { width: 20px; background: var(--sun); }
 @keyframes tour-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .tour-spot, .tour-bubble { transition: none; animation: none; } }
+
+/* ---------- UX 2.4 ---------- */
+/* Pronto agora: tudo o que dá para coletar, em fichas roláveis. */
+.ready-now { padding: 14px; border-color: rgba(126, 224, 129, .3); background: linear-gradient(135deg, rgba(126, 224, 129, .12), transparent 65%), var(--card); }
+.ready-now h3 { font: 800 16px/1.2 var(--pixel); }
+.ready-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--leaf); box-shadow: 0 0 0 0 rgba(126, 224, 129, .5); animation: ping 2.4s infinite; flex: none; }
+.ready-chips { display: flex; gap: 8px; overflow-x: auto; margin: 12px -14px 0; padding: 0 14px 2px; scrollbar-width: none; }
+.ready-chips::-webkit-scrollbar { display: none; }
+.ready-chip { display: flex; align-items: center; gap: 6px; flex: none; max-width: 170px; height: 40px; padding: 0 12px 0 8px; border-radius: 12px; background: var(--bg-2); border: 1px solid rgba(126, 224, 129, .25); font-size: 13px; transition: transform .15s var(--ease), border-color .2s; }
+.ready-chip b { font: 800 14px/1 var(--pixel); color: var(--leaf); }
+.ready-chip span { color: var(--text-2); font-weight: 600; }
+.ready-chip:hover { border-color: rgba(126, 224, 129, .5); }
+
+/* Alertas agrupados */
+.pref-group { margin-top: 18px; }
+.pref-group-title { font-size: 12px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; margin: 0 2px 8px; }
+
+/* Toque: um leve afundar em tudo o que é clicável grande. */
+button.card:active, .timer:active, .ready-chip:active, .mover:active, .list-row > button:active { transform: scale(.98); }
+button.card, .ready-chip { transition: transform .15s var(--ease), border-color .2s; }
+
+@media (max-width: 640px) {
+  /* Timers em duas colunas compactas: metade da rolagem. */
+  .timer-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .timer { display: grid; grid-template-columns: auto 1fr; grid-template-areas: 'ring cd' 'info info'; align-items: center; gap: 8px 10px; padding: 10px 10px 11px; border-radius: 14px; }
+  .timer .ring { grid-area: ring; width: 46px; height: 46px; }
+  .timer .ring img { width: 26px; height: 26px; }
+  .timer .grow { grid-area: info; }
+  .timer .name { font-size: 14px; }
+  .timer .meta { font-size: 12px; }
+  .timer .cd { grid-area: cd; font-size: 15px; }
+  .timer:hover { transform: none; }
+
+  /* VIP, expansão, ilha e mutantes em grade 2x2. */
+  .info-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .info-card { flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px; }
+  .info-card .chev-r { display: none; }
+  .info-card img { width: 28px; height: 28px; }
+  .info-card strong { font-size: 15px; }
+  .info-card .grow { width: 100%; }
+
+  /* Saldos mais baixos. */
+  .balance { padding: 12px; }
+  .balance.main strong { font-size: 28px; }
+  .profile { padding: 14px; gap: 12px; }
+  .avatar.bumpkin { width: 60px; height: 60px; }
+  .profile h1 { font-size: 19px; }
+  .section { margin-top: 18px; }
+  .next { padding: 14px; }
+  .next .big { font-size: 22px; }
+}

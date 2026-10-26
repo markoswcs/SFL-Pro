@@ -149,6 +149,8 @@ const pt = {
   'tour.market.title': 'Mercado e carteira', 'tour.market.text': 'Veja o que valorizou, NFTs, sinais de venda e a sua carteira com lucro em FLOWER e em dólar, já com a taxa da sua ilha.',
   'tour.alerts.title': 'Avisos no celular', 'tour.alerts.text': 'Ative as notificações para saber da colheita, dos animais, das vendas e da Floating Island mesmo com o app fechado.',
   'tour.done.title': 'Tudo pronto!', 'tour.done.text': 'Você pode rever este tour quando quiser em Ajustes → Tutorial.',
+  'ready.title': '{n} prontos para coletar', 'ready.hint': 'toque para ver',
+  'alerts.group.farming': 'Lavoura', 'alerts.group.resources': 'Recursos', 'alerts.group.animals': 'Animais e abelhas', 'alerts.group.production': 'Produção', 'alerts.group.events': 'Mercado e eventos',
 };
 
 const en = {
@@ -300,6 +302,8 @@ const en = {
   'tour.market.title': 'Market and portfolio', 'tour.market.text': 'See what went up, NFTs, sell signals and your portfolio with profit in FLOWER and in dollars, already with your island fee.',
   'tour.alerts.title': 'Phone alerts', 'tour.alerts.text': 'Turn on notifications for harvests, animals, sales and the Floating Island, even with the app closed.',
   'tour.done.title': 'All set!', 'tour.done.text': 'You can replay this tour anytime in Settings → Tutorial.',
+  'ready.title': '{n} ready to collect', 'ready.hint': 'tap to see',
+  'alerts.group.farming': 'Farming', 'alerts.group.resources': 'Resources', 'alerts.group.animals': 'Animals and bees', 'alerts.group.production': 'Production', 'alerts.group.events': 'Market and events',
 };
 
 const DICTS = { pt, en };
