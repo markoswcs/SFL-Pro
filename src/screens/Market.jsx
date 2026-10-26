@@ -5,7 +5,7 @@ import { useResource } from '../lib/hooks.js';
 import { setSettings } from '../lib/store.js';
 import { locale, useT } from '../i18n.js';
 import { Empty, ItemImg, Notice } from '../ui.jsx';
-import { Buys, Prices } from './MarketPrices.jsx';
+import { Buys, NftHoldings, Prices } from './MarketPrices.jsx';
 
 const TABS = ['prices', 'buys', 'inventory', 'sales', 'news'];
 
@@ -45,6 +45,7 @@ function Inventory({ farm, prices, rate, currency }) {
           </div>
         ))}
       </div>
+      <NftHoldings farm={farm} rate={rate} currency={currency} />
     </>
   );
 }
@@ -138,7 +139,7 @@ export default function Market({ data, settings }) {
         ))}
       </div>
       {tab === 'prices' && <Prices prices={data.prices} rate={rate} currency={settings.currency} favorites={settings.favorites} farm={data.farm} land={data.land} onBuy={name => { setAdding(name); setTab('buys'); }} />}
-      {tab === 'buys' && <Buys farm={data.farm} land={data.land} prices={data.prices} settings={settings} rate={rate} currency={settings.currency} adding={adding} onAdding={setAdding} />}
+      {tab === 'buys' && <Buys farm={data.farm} land={data.land} prices={data.prices} settings={settings} rate={rate} currency={settings.currency} exchange={data.exchange} adding={adding} onAdding={setAdding} />}
       {tab === 'inventory' && <Inventory farm={data.farm} prices={data.prices} rate={rate} currency={settings.currency} />}
       {tab === 'sales' && <Sales farm={data.farm} rate={rate} currency={settings.currency} lang={settings.lang} />}
       {tab === 'news' && <News />}

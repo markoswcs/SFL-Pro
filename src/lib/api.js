@@ -37,6 +37,7 @@ export const api = {
   land: farmId => call(`${SFL_WORLD}/v1.1/land/${encodeURIComponent(farmId)}`),
   prices: () => call(`${SFL_WORLD}/v1/prices`).then(d => d?.data ?? d),
   exchange: () => call(`${SFL_WORLD}/v1.1/exchange`),
+  nfts: () => call(`${SFL_WORLD}/v1/nfts`),
   community: (type, params = {}) => call(`${GAME}/data?${new URLSearchParams({ type, ...params })}`),
   yakkaLeaderboard: () => call('https://api.yakkamon.com/leaderboard'),
 };

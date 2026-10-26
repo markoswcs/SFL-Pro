@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { registerSW } from 'virtual:pwa-register';
 import { extractTimers, groupTimers } from '../supabase/functions/_shared/farm-timers.js';
 import { useGameData, useNow } from './lib/hooks.js';
@@ -12,6 +12,7 @@ import Market from './screens/Market.jsx';
 import Alerts from './screens/Alerts.jsx';
 import Settings, { CredentialsForm } from './screens/Settings.jsx';
 import { YakkaDex, YakkaHome, YakkaRank } from './screens/Yakkamon.jsx';
+import Tour from './Tour.jsx';
 
 // Cada jogo tem as próprias abas; Ajustes é compartilhado.
 const TABS = {
@@ -23,7 +24,7 @@ const HOME = { sfl: 'farm', yakka: 'yakka' };
 function GameSwitch({ game, onChange }) {
   const t = useT();
   return (
-    <div className="game-switch" role="tablist" aria-label={t('game.switch')}>
+    <div className="game-switch" data-tour="game" role="tablist" aria-label={t('game.switch')}>
       {/* No celular só os ícones aparecem; o nome fica no aria-label e no title. */}
       <button role="tab" aria-selected={game === 'sfl'} aria-label="Sunflower Land" title="Sunflower Land" onClick={() => onChange('sfl')}><ItemImg name="Sunflower" size={20} /> <span className="gs-name">Sunflower</span></button>
       <button role="tab" aria-selected={game === 'yakka'} aria-label="Yakkamon" title="Yakkamon" onClick={() => onChange('yakka')}><span className="yk-egg" aria-hidden="true" /> <span className="gs-name">Yakkamon</span></button>
@@ -169,6 +170,9 @@ function Shell() {
   // O Yakkamon não precisa de Farm ID; só o idioma.
   const needsSetup = !settings.lang || (game === 'sfl' && !settings.farmId);
   const tabs = TABS[game];
+  // Tour de boas-vindas: aparece uma vez, depois que a fazenda carrega.
+  const showTour = !needsSetup && !settings.tourDone && !!data.farm;
+  const tourTab = useCallback(id => { setSettings({ game: 'sfl' }); setTab(id); }, []);
   const current = tabs.some(([id]) => id === tab) ? tab : HOME[game];
 
   return (
@@ -221,7 +225,7 @@ function Shell() {
       {!needsSetup && (
         <nav className="tabbar" aria-label="Menu">
           {tabs.map(([id, icon]) => (
-            <button key={id} aria-current={current === id ? 'page' : undefined} onClick={() => go(id)}>
+            <button key={id} data-tour={`tab-${id}`} aria-current={current === id ? 'page' : undefined} onClick={() => go(id)}>
               <Icon name={icon} />
               {t(`tab.${id}`)}
               {id === 'farm' && readyCount > 0 && current !== 'farm' && <span className="badge">{readyCount}</span>}
@@ -231,6 +235,7 @@ function Shell() {
       )}
 
       {support && <SupportSheet onClose={() => setSupport(false)} />}
+      {showTour && <Tour onTab={tourTab} onClose={() => setSettings({ tourDone: true })} />}
     </div>
   );
 }

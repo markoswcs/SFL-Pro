@@ -10,6 +10,7 @@ const SUMMARY_AFTER = 3; // mais que isso no mesmo minuto vira uma notificação
 // Vendas e a ilha flutuante sempre chegam sozinhas: o valor recebido e a hora de fechar importam.
 const NEVER_SUMMARIZE = new Set(['sales', 'offers', 'floatingIsland']);
 const PRICES_EVERY_MS = 30 * 60_000; // uma foto dos preços do mercado a cada 30 min
+const NFT_EVERY_MS = 2 * 3600_000; // os floors dos NFTs (~850 itens) a cada 2 h
 
 const tagOf = (g: { category: string; name: string; readyAt: number; keys?: string[] }) =>
   g.category === 'sales' || g.category === 'offers' ? `${g.category}:${g.keys?.[0]}` : `${g.category}:${g.name}:${Math.round(g.readyAt / 60_000)}`;
@@ -19,11 +20,28 @@ async function snapshotPrices() {
   const { data: last, error } = await db.from('sflpro_prices').select('at').order('at', { ascending: false }).limit(1).maybeSingle();
   if (error) return false; // tabela ainda não criada (migração 20261026120000)
   if (last && Date.now() - new Date(last.at).getTime() < PRICES_EVERY_MS) return false;
-  const res = await fetch('https://sfl.world/api/v1/prices', { headers: { Accept: 'application/json', 'User-Agent': 'SFLPro/2.2' }, signal: AbortSignal.timeout(10_000) });
-  if (!res.ok) return false;
-  const p2p = (await res.json())?.data?.p2p;
+  const get = (url: string) => fetch(url, { headers: { Accept: 'application/json', 'User-Agent': 'SFLPro/2.3' }, signal: AbortSignal.timeout(15_000) })
+    .then(r => (r.ok ? r.json() : null));
+  const [prices, exchange, nfts] = await Promise.allSettled([
+    get('https://sfl.world/api/v1/prices'), get('https://sfl.world/api/v1.1/exchange'), get('https://sfl.world/api/v1/nfts'),
+  ]);
+  const p2p = prices.status === 'fulfilled' ? prices.value?.data?.p2p : null;
   if (!p2p || !Object.keys(p2p).length) return false;
-  await db.from('sflpro_prices').insert({ at: new Date().toISOString(), p2p });
+  const usd = exchange.status === 'fulfilled' ? Number(exchange.value?.sfl?.usd) || null : null;
+  // Floor de cada NFT por id ("c123" colecionável, "w45" roupa), só os que estão à venda.
+  let nft: Record<string, number> | null = null;
+  const { data: lastNft } = await db.from('sflpro_prices').select('at').not('nft', 'is', null).order('at', { ascending: false }).limit(1).maybeSingle();
+  const nftDue = !lastNft || Date.now() - new Date(lastNft.at).getTime() >= NFT_EVERY_MS - 5 * 60_000;
+  if (nftDue && nfts.status === 'fulfilled' && nfts.value) {
+    nft = {};
+    for (const [prefix, list] of [['c', nfts.value.collectibles], ['w', nfts.value.wearables]] as const) {
+      for (const n of list ?? []) if (Number(n?.floor) > 0) nft[`${prefix}${n.id}`] = Number(n.floor);
+    }
+  }
+  const at = new Date().toISOString();
+  const { error: insertError } = await db.from('sflpro_prices').insert({ at, p2p, usd, nft });
+  // Banco sem as colunas usd/nft (migração 20261026180000 não aplicada): grava só os recursos.
+  if (insertError) await db.from('sflpro_prices').insert({ at, p2p });
   await db.from('sflpro_prices').delete().lt('at', new Date(Date.now() - 60 * 86400_000).toISOString());
   return true;
 }

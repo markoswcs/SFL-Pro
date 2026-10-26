@@ -15,6 +15,10 @@ const DEFAULTS = {
   yakkaName: '',
   purchases: [],
   sellGoal: 0.1,
+  positions: {}, // edição do preço médio e da cotação média por item
+  txEdits: {}, // correções em ofertas aceitas (vêm do jogo, não da pessoa)
+  txHidden: {},
+  tourDone: false,
 };
 
 function load() {

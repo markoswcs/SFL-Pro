@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { itemStats, purchaseMath, resourceTax, signals, taxFor } from '../src/lib/market.js';
+import { buildPositions, itemStats, positionMath, resourceTax, signals, taxFor, usdAt } from '../src/lib/market.js';
 
 const H = 3600_000;
 
@@ -37,10 +37,33 @@ test('sem histórico suficiente não há sinal', () => {
   assert.deepEqual(signals(s, 0.075), { sell: null, flip: null });
 });
 
-test('compra: preço para não perder e para lucrar já com a taxa', () => {
-  const m = purchaseMath({ qty: 100, unit: 0.02 }, 0.03, 0.1, 0.1);
-  assert.ok(Math.abs(m.breakEven - 0.02 / 0.9) < 1e-12);
-  assert.ok(Math.abs(m.target - (0.02 * 1.1) / 0.9) < 1e-12);
-  assert.ok(Math.abs(m.netNow - 100 * 0.03 * 0.9) < 1e-12);
-  assert.ok(Math.abs(m.change - 0.5) < 1e-12);
+test('posição: preço médio e cotação média ponderados pelo custo', () => {
+  const [p] = buildPositions([
+    { id: 'a', item: 'Wheat', qty: 100, sfl: 1, at: 1, usd: 0.02 },
+    { id: 'b', item: 'Wheat', qty: 100, sfl: 3, at: 2, usd: 0.01 },
+  ]);
+  assert.equal(p.qty, 200);
+  assert.equal(p.avgUnit, 0.02);
+  assert.ok(Math.abs(p.avgUsd - (1 * 0.02 + 3 * 0.01) / 4) < 1e-12);
+  const [o] = buildPositions([{ id: 'a', item: 'Wheat', qty: 100, sfl: 1, at: 1 }], { Wheat: { avgUnit: 0.05, avgUsd: 0.03 } });
+  assert.equal(o.avgUnit, 0.05);
+  assert.equal(o.avgUsd, 0.03);
+  assert.equal(o.edited, true);
+});
+
+test('lucro em FLOWER pode ser prejuízo em dólar quando o FLOWER cai', () => {
+  // Comprou a 0,02 FLOWER com FLOWER a US$ 0,02; hoje vale 0,025 mas o FLOWER caiu para US$ 0,01.
+  const m = positionMath({ qty: 100, avgUnit: 0.02, avgUsd: 0.02 }, 0.025, 0.01, 0, 0.1);
+  assert.ok(m.profit > 0);
+  assert.ok(m.profitUsd < 0);
+  assert.ok(Math.abs(m.flowerMove + 0.5) < 1e-12);
+  // Para recuperar os dólares precisa do dobro em FLOWER.
+  assert.ok(Math.abs(m.breakEvenUsd - 0.04) < 1e-12);
+});
+
+test('cotação da compra vem do histórico mais próximo antes da data', () => {
+  const h = { t: [100, 200, 300], usd: [0.01, null, 0.03] };
+  assert.equal(usdAt(h, 250), 0.01);
+  assert.equal(usdAt(h, 300), 0.03);
+  assert.equal(usdAt(h, 50), 0.01);
 });

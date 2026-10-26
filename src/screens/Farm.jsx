@@ -449,7 +449,7 @@ export default function Farm({ data, settings, onOpenSettings }) {
 
       {farm && upcoming && (
         <div className="section">
-          <button className="card next" onClick={() => setSheet(upcoming)}>
+          <button className="card next" data-tour="next" onClick={() => setSheet(upcoming)}>
             <Ring name={upcoming.image} progress={progressOf(upcoming, now)} qty={qtyOf(upcoming)} />
             <div className="grow">
               <div className="kicker">{t('farm.next')}</div>
@@ -467,7 +467,7 @@ export default function Farm({ data, settings, onOpenSettings }) {
       {farm && (
         <div className="section">
           <div className="section-head">
-            <h2>{t('farm.timers')}</h2>
+            <h2 data-tour="timers">{t('farm.timers')}</h2>
             <span className="count">{t('farm.total', { n: groups.reduce((n, g) => n + g.count, 0) })}</span>
           </div>
           <div className="chip-row" role="toolbar">

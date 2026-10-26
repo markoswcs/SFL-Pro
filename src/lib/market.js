@@ -59,9 +59,12 @@ export function itemStats(history, name, current, now = Date.now()) {
   const week = points.filter(p => p.at >= now - 7 * 86400_000).map(p => p.v);
   const avg7 = week.reduce((s, v) => s + v, 0) / week.length;
   const change = ref => (ref?.value > 0 ? (cur - ref.value) / ref.value : null);
+  // Com histórico curto, a comparação é com o ponto mais antigo: o rótulo mostra o período real.
+  const hours = ref24 ? Math.max(1, Math.round((now - ref24.at) / 3600_000)) : 24;
   return {
     current: cur, points, span,
-    change24: change(ref24), change7: change(ref7),
+    change24: change(ref24), change7: ref7 && ref24 && ref7.at === ref24.at ? null : change(ref7),
+    label24: hours >= 20 ? '24h' : `${hours}h`,
     ref24At: ref24?.at, ref7At: ref7?.at,
     avg7, min7: Math.min(...week), max7: Math.max(...week),
   };
@@ -85,17 +88,78 @@ export function signals(stats, taxRate) {
   return { sell, flip, flipMargin };
 }
 
-/** Contas de uma compra: quanto vale agora, quanto sobra vendendo e por quanto anunciar. */
-export function purchaseMath({ qty, unit }, current, taxRate, goal = 0.1) {
-  const cost = qty * unit;
-  const netNow = qty * current * (1 - taxRate);
+/** Cotação FLOWER→US$ guardada mais perto de `at` sem passar dele (ou a mais antiga). */
+export function usdAt(history, at) {
+  const t = history?.t ?? [];
+  const usd = history?.usd ?? [];
+  let pick = null;
+  for (let i = 0; i < t.length; i++) {
+    if (usd[i] == null) continue;
+    if (t[i] <= at || pick == null) pick = usd[i];
+    if (t[i] > at) break;
+  }
+  return pick;
+}
+
+/** Estatísticas de um NFT a partir do resumo do servidor [24h, 7d, média, mín., máx., início]. */
+export function nftStats(summary, current, now = Date.now()) {
+  if (!summary) return { current, points: [], span: 0 };
+  const [p24, p7, avg7, min7, max7, first] = summary;
+  const change = ref => (ref > 0 && current > 0 ? (current - ref) / ref : null);
   return {
-    cost,
-    valueNow: qty * current,
-    netNow,
-    profitNow: netNow - cost,
-    change: unit > 0 ? (current - unit) / unit : null,
-    breakEven: unit / (1 - taxRate),
-    target: (unit * (1 + goal)) / (1 - taxRate),
+    current, points: [], span: now - first,
+    change24: change(p24),
+    label24: now - first >= 20 * 3600_000 ? '24h' : `${Math.max(1, Math.round((now - first) / 3600_000))}h`,
+    change7: now - first >= 36 * 3600_000 ? change(p7) : null,
+    avg7, min7: Math.min(min7, current || min7), max7: Math.max(max7, current || 0),
   };
+}
+
+/**
+ * Agrupa as compras por item numa posição com preço médio e cotação média do FLOWER.
+ * `overrides[item] = { avgUnit, avgUsd }` vem da edição manual do preço médio.
+ */
+export function buildPositions(txs, overrides = {}) {
+  const map = new Map();
+  for (const tx of txs) {
+    const p = map.get(tx.item) ?? { item: tx.item, qty: 0, cost: 0, usdCost: 0, usdBase: 0, txs: [] };
+    p.qty += tx.qty;
+    p.cost += tx.sfl;
+    if (tx.usd > 0) { p.usdCost += tx.sfl * tx.usd; p.usdBase += tx.sfl; }
+    p.txs.push(tx);
+    map.set(tx.item, p);
+  }
+  return [...map.values()].map(p => {
+    const o = overrides[p.item] ?? {};
+    const avgUnit = o.avgUnit > 0 ? o.avgUnit : p.cost / p.qty;
+    const avgUsd = o.avgUsd > 0 ? o.avgUsd : p.usdBase > 0 ? p.usdCost / p.usdBase : null;
+    const lastAt = Math.max(...p.txs.map(x => x.at));
+    return { item: p.item, qty: p.qty, avgUnit, avgUsd, txs: p.txs.sort((a, b) => b.at - a.at), edited: !!(o.avgUnit || o.avgUsd), lastAt };
+  }).sort((a, b) => b.lastAt - a.lastAt);
+}
+
+/**
+ * Contas de uma posição em FLOWER e em dólar. Lucro em FLOWER pode virar prejuízo em US$
+ * se o FLOWER caiu desde a compra; `breakEvenUsd` é o preço por unidade (em FLOWER)
+ * para recuperar os dólares investidos na cotação de hoje.
+ */
+export function positionMath({ qty, avgUnit, avgUsd }, current, curUsd, taxRate, goal = 0.1) {
+  const cost = qty * avgUnit;
+  const net = qty * current * (1 - taxRate);
+  const out = {
+    cost, net, profit: net - cost, pct: cost > 0 ? (net - cost) / cost : null,
+    change: avgUnit > 0 && current > 0 ? (current - avgUnit) / avgUnit : null,
+    breakEven: avgUnit / (1 - taxRate),
+    target: (avgUnit * (1 + goal)) / (1 - taxRate),
+  };
+  if (avgUsd > 0 && curUsd > 0) {
+    out.costUsd = cost * avgUsd;
+    out.netUsd = net * curUsd;
+    out.profitUsd = out.netUsd - out.costUsd;
+    out.pctUsd = out.costUsd > 0 ? out.profitUsd / out.costUsd : null;
+    out.flowerMove = curUsd / avgUsd - 1;
+    out.breakEvenUsd = (avgUnit * avgUsd) / curUsd / (1 - taxRate);
+    out.targetUsd = out.breakEvenUsd * (1 + goal);
+  }
+  return out;
 }

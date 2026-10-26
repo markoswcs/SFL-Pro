@@ -63,6 +63,9 @@ export async function disablePush() {
 /** Histórico dos preços P2P guardado pelo servidor: { t: [ms…], items: { Nome: [preço…] } }. */
 export const priceHistory = () => callServer({ action: 'prices' });
 
+/** Série de 7 dias do floor de um NFT ("c1210" colecionável, "w523" roupa). */
+export const nftHistory = key => callServer({ action: 'nftHistory', key });
+
 /** Ofertas de compra aceitas que o servidor copiou desta fazenda. */
 export const farmPurchases = farmId => callServer({ action: 'purchases', farmId }).then(d => d.purchases ?? []);
 

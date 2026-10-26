@@ -94,6 +94,11 @@ export default function Settings({ settings, install }) {
             {install.available && <button className="btn btn-sun btn-sm" onClick={install.prompt}>{t('install.action')}</button>}
           </div>
           <div className="pref">
+            <Icon name="info" width="26" height="26" />
+            <div className="grow"><div className="title">{t('tour.replay')}</div><div className="sub">{t('tour.replaySub')}</div></div>
+            <button className="btn btn-ghost btn-sm" onClick={() => setSettings({ tourDone: false, game: 'sfl' })}>{t('tour.start')}</button>
+          </div>
+          <div className="pref">
             <Icon name="x" width="26" height="26" />
             <div className="grow"><div className="title">{t('settings.clear')}</div><div className="sub">{t('settings.clearSub')}</div></div>
             <button

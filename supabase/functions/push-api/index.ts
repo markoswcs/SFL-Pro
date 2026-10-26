@@ -89,9 +89,15 @@ Deno.serve(async req => {
         // Histórico dos preços P2P em colunas: { t: [ms…], items: { Nome: [preço…] } }.
         // Últimas 48 h de hora em hora, depois uma foto a cada 6 h até 30 dias.
         const since = new Date(Date.now() - 30 * 86400_000).toISOString();
-        const { data, error } = await db.from('sflpro_prices').select('at, p2p').gte('at', since).order('at');
+        type Row = { at: string; p2p: Record<string, number>; usd?: number | null; nft?: Record<string, number> | null };
+        let { data, error } = await db.from('sflpro_prices').select('at, p2p, usd').gte('at', since).order('at') as { data: Row[] | null; error: unknown };
+        // Sem a coluna usd ainda: devolve só os recursos.
+        if (error) ({ data, error } = await db.from('sflpro_prices').select('at, p2p').gte('at', since).order('at') as { data: Row[] | null; error: unknown });
         if (error) return json({ error: 'Histórico de preços indisponível.' }, 503);
-        const picked: { at: string; p2p: Record<string, number> }[] = [];
+        // Os floors dos NFTs são pesados: só os últimos 7 dias, e só as fotos que têm NFT (a cada 2 h).
+        const { data: nftData } = await db.from('sflpro_prices').select('at, nft')
+          .gte('at', new Date(Date.now() - 7 * 86400_000).toISOString()).not('nft', 'is', null).order('at');
+        const picked: Row[] = [];
         for (const row of data ?? []) {
           const at = new Date(row.at).getTime();
           const step = Date.now() - at < 48 * 3600_000 ? 3600_000 : 6 * 3600_000;
@@ -106,9 +112,42 @@ Deno.serve(async req => {
             (items[name] ??= Array(picked.length).fill(null))[i] = Number(price);
           }
         });
-        return new Response(JSON.stringify({ t: picked.map(r => new Date(r.at).getTime()), items }), {
+        // NFTs são ~850: em vez da série inteira, um resumo por id com
+        // [preço há 24 h, preço há 7 dias, média 7d, mínimo 7d, máximo 7d, início do histórico].
+        const now = Date.now();
+        const nftRows = ((nftData ?? []) as Row[]).filter(r => r.nft);
+        const nft: Record<string, (number | null)[]> = {};
+        if (nftRows.length) {
+          const refAt = (key: string, ago: number) => {
+            let v: number | null = null;
+            for (const r of nftRows) {
+              if (new Date(r.at).getTime() > now - ago) break;
+              if (r.nft![key] != null) v = r.nft![key];
+            }
+            return v ?? nftRows.find(r => r.nft![key] != null)?.nft![key] ?? null;
+          };
+          const keys = new Set(nftRows.flatMap(r => Object.keys(r.nft!)));
+          for (const key of keys) {
+            const vs = nftRows.map(r => r.nft![key]).filter((v): v is number => v != null);
+            const first = nftRows.find(r => r.nft![key] != null)!;
+            nft[key] = [refAt(key, 86400_000), refAt(key, 7 * 86400_000), vs.reduce((s, v) => s + v, 0) / vs.length, Math.min(...vs), Math.max(...vs), new Date(first.at).getTime()];
+          }
+        }
+        const body = { t: picked.map(r => new Date(r.at).getTime()), items, usd: picked.map(r => (r.usd == null ? null : Number(r.usd))), nft };
+        return new Response(JSON.stringify(body), {
           headers: { ...cors, 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=300' },
         });
+      }
+
+      case 'nftHistory': {
+        // Série de 7 dias do floor de um NFT, para o gráfico da gaveta.
+        const key = String(body.key ?? '');
+        if (!/^[cw]\d{1,6}$/.test(key)) return json({ error: 'NFT inválido.' }, 400);
+        const since = new Date(Date.now() - 7 * 86400_000).toISOString();
+        const { data, error } = await db.from('sflpro_prices').select('at, nft').gte('at', since).order('at');
+        if (error) return json({ error: 'Histórico indisponível.' }, 503);
+        const rows = (data ?? []).filter(r => r.nft?.[key] != null);
+        return json({ t: rows.map(r => new Date(r.at).getTime()), v: rows.map(r => Number(r.nft[key])) });
       }
 
       case 'purchases': {
