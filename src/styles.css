@@ -386,3 +386,55 @@ button.balance.main:hover, button.next:hover, button.info-card:hover { border-co
 .timer .meta, .list-row .sub, .pref .sub { color: #9a9786; }
 .ring .qty { font: 800 11px/18px var(--body); }
 .balance strong { font-weight: 800; }
+
+/* ---------- troca de jogo ---------- */
+.game-switch { display: flex; gap: 4px; padding: 4px; border-radius: 14px; background: var(--card); border: 1px solid var(--line); }
+.game-switch button { display: flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px 0 6px; border-radius: 10px; font: 700 15px/1 var(--brand); color: var(--muted); transition: background .2s, color .2s; }
+.game-switch button img { width: 22px; height: 22px; border-radius: 7px; }
+.game-switch button[aria-selected='true'] { background: var(--card-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--line-2); }
+@media (max-width: 420px) { .game-switch button span:not(.yk-egg) { font-size: 13px; } .game-switch button { padding: 0 9px 0 5px; } }
+.yk-egg { width: 22px; height: 22px; border-radius: 50% 50% 46% 46% / 58% 58% 42% 42%; background: radial-gradient(circle at 35% 35%, #f4d7ff 0 18%, transparent 19%), linear-gradient(160deg, #b98cff, #5b3bd6); box-shadow: inset 0 -3px 0 rgba(0, 0, 0, .18); flex: none; }
+
+.info-card.live { border-color: rgba(126, 224, 129, .4); background: linear-gradient(90deg, rgba(126, 224, 129, .12), transparent 70%), var(--card); }
+.info-card.live strong { color: var(--leaf); }
+
+/* ---------- tema Yakkamon ---------- */
+:root[data-game='yakka'] {
+  --bg: #0f0c18; --bg-2: #151022; --card: #1b1530; --card-2: #241c3d;
+  --line: rgba(220, 205, 255, .09); --line-2: rgba(220, 205, 255, .17);
+  --text: #ece6ff; --text-2: #b5acd0; --muted: #807898;
+  --sun: #c59bff; --sun-2: #8b5cf6; --sun-ink: #1a0b33;
+  --leaf: #5fe3c4; --leaf-bg: rgba(95, 227, 196, .12);
+}
+:root[data-game='yakka'] body {
+  background:
+    radial-gradient(900px 500px at 85% -10%, rgba(197, 155, 255, .12), transparent 60%),
+    radial-gradient(700px 500px at -10% 30%, rgba(95, 227, 196, .07), transparent 60%),
+    var(--bg);
+}
+.yk-hero { padding: 20px; position: relative; overflow: hidden; background: linear-gradient(135deg, rgba(139, 92, 246, .22), transparent 60%), var(--card); }
+.yk-hero h1 { font: 700 34px/1 var(--brand); margin-top: 12px; }
+.yk-hero p { margin-top: 6px; font-size: 14px; max-width: 46ch; }
+.yk-hero-mons { display: flex; gap: 6px; }
+.yk-mon { border-radius: 14px; background: var(--bg-2); object-fit: contain; flex: none; }
+.yk-status { display: inline-flex; align-items: center; gap: 8px; margin-top: 12px; padding: 6px 12px; border-radius: 99px; background: rgba(197, 155, 255, .13); color: var(--sun); font-size: 13px; font-weight: 800; }
+.yk-status i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 4px rgba(197, 155, 255, .18); }
+.yk-trainer { padding: 16px; }
+.yk-trainer .kicker { font-size: 11.5px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.yk-trainer h3 { font: 800 19px/1.2 var(--pixel); }
+.yk-points { display: grid; text-align: right; font: 800 18px/1.1 var(--pixel); color: var(--sun); }
+.yk-points small { font: 600 11px/1 var(--body); color: var(--muted); }
+.yk-dot { width: 12px; height: 12px; flex: none; border-radius: 50%; border: 2px solid var(--line-2); }
+.yk-dot.done { background: var(--leaf); border-color: var(--leaf); }
+a.list-row { color: inherit; }
+.yk-rank { width: 34px; height: 34px; flex: none; display: grid; place-items: center; border-radius: 10px; background: var(--bg-2); font: 800 14px/1 var(--pixel); color: var(--text-2); }
+.yk-rank.r1 { background: rgba(255, 200, 61, .18); color: #ffc83d; }
+.yk-rank.r2 { background: rgba(220, 220, 235, .14); color: #dcdcea; }
+.yk-rank.r3 { background: rgba(214, 140, 80, .18); color: #e09a5f; }
+.list-row.yk-me { background: rgba(197, 155, 255, .1); box-shadow: inset 3px 0 0 var(--sun); }
+.yk-dex { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+.yk-card { display: flex; gap: 14px; padding: 14px; align-items: flex-start; }
+.yk-card h3 { font: 800 18px/1.2 var(--pixel); }
+.tag.yk-legendary { background: rgba(255, 200, 61, .15); color: #ffc83d; }
+.tag.yk-rare { background: rgba(110, 200, 255, .14); color: var(--sky); }
+.tag.yk-uncommon { background: rgba(95, 227, 196, .13); color: #5fe3c4; }

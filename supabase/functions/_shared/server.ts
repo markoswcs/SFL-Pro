@@ -46,12 +46,17 @@ export async function storeTimers(farmId: number, farm: unknown) {
   // Guarda só o que ainda vai ficar pronto ou ficou pronto há pouco; o resto não gera aviso.
   const rows = extractTimers(farm, now)
     .filter((t: { readyAt: number }) => t.readyAt > now - 10 * 60_000 && t.readyAt < now + 14 * 86400_000)
-    .map((t: { key: string; category: string; name: string; image: string; readyAt: number }) => ({
+    .map((t: { key: string; category: string; name: string; image: string; readyAt: number; amount?: number; meta?: unknown }) => ({
       farm_id: farmId, timer_key: t.key, category: t.category, name: t.name, image: t.image, ready_at: new Date(t.readyAt).toISOString(),
+      amount: t.amount ?? 1, meta: t.meta ?? null,
     }));
   await db.from('sflpro_timers').delete().eq('farm_id', farmId);
   if (rows.length) {
-    const { error } = await db.from('sflpro_timers').insert(rows);
+    let { error } = await db.from('sflpro_timers').insert(rows);
+    // Banco ainda sem as colunas amount/meta (migração 20261026 não aplicada): grava sem elas.
+    if (error && /amount|meta|column/i.test(error.message)) {
+      ({ error } = await db.from('sflpro_timers').insert(rows.map(({ amount: _a, meta: _m, ...r }) => r)));
+    }
     if (error) throw error;
   }
   return rows.length;

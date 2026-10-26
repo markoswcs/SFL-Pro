@@ -1,9 +1,10 @@
 // Proxy do mesmo domínio para as APIs do jogo, que não liberam CORS para o navegador.
 // A chave da Community API fica só aqui (variável SFL_API_KEY) e nunca chega ao navegador.
 // A API limita ~1 requisição a cada 5 s por IP, então as respostas ficam em cache na borda da Vercel.
-const ALLOWED_HOSTS = new Set(['sfl.world', 'api.sunflower-land.com']);
+const ALLOWED_HOSTS = new Set(['sfl.world', 'api.sunflower-land.com', 'api.yakkamon.com']);
 
 function cacheSeconds(url) {
+  if (url.hostname === 'api.yakkamon.com') return 120;
   if (url.pathname.startsWith('/img/')) return 60 * 60 * 24 * 7;
   if (url.hostname === 'sfl.world') return 60;
   if (url.pathname.startsWith('/community/farms/')) return 45;

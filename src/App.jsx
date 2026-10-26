@@ -11,8 +11,24 @@ import Farm from './screens/Farm.jsx';
 import Market from './screens/Market.jsx';
 import Alerts from './screens/Alerts.jsx';
 import Settings, { CredentialsForm } from './screens/Settings.jsx';
+import { YakkaDex, YakkaHome, YakkaRank } from './screens/Yakkamon.jsx';
 
-const TABS = [['farm', 'farm'], ['market', 'market'], ['alerts', 'bell'], ['settings', 'gear']];
+// Cada jogo tem as próprias abas; Ajustes é compartilhado.
+const TABS = {
+  sfl: [['farm', 'farm'], ['market', 'market'], ['alerts', 'bell'], ['settings', 'gear']],
+  yakka: [['yakka', 'egg'], ['rank', 'trophy'], ['dex', 'book'], ['settings', 'gear']],
+};
+const HOME = { sfl: 'farm', yakka: 'yakka' };
+
+function GameSwitch({ game, onChange }) {
+  const t = useT();
+  return (
+    <div className="game-switch" role="tablist" aria-label={t('game.switch')}>
+      <button role="tab" aria-selected={game === 'sfl'} onClick={() => onChange('sfl')}><img src="/icons/icon-192.png" alt="" width="22" height="22" /> <span>Sunflower</span></button>
+      <button role="tab" aria-selected={game === 'yakka'} onClick={() => onChange('yakka')}><span className="yk-egg" aria-hidden="true" /> <span>Yakkamon</span></button>
+    </div>
+  );
+}
 
 function useInstall() {
   const [event, setEvent] = useState(null);
@@ -99,13 +115,18 @@ function Shell() {
   const t = useT();
   const toast = useToast();
   const install = useInstall();
-  const [tab, setTab] = useState(() => new URLSearchParams(location.search).get('tab') ?? 'farm');
+  const game = settings.game === 'yakka' ? 'yakka' : 'sfl';
+  const [tab, setTab] = useState(() => new URLSearchParams(location.search).get('tab') ?? HOME[game]);
   const [update, setUpdate] = useState(null);
   const [support, setSupport] = useState(false);
   const data = useGameData({ farmId: settings.farmId });
   const now = useNow(15_000);
 
   useEffect(() => { document.documentElement.lang = settings.lang === 'en' ? 'en' : 'pt-BR'; }, [settings.lang]);
+  useEffect(() => {
+    document.documentElement.dataset.game = game;
+    document.querySelector('meta[name=theme-color]')?.setAttribute('content', game === 'yakka' ? '#120e1c' : '#0c110d');
+  }, [game]);
 
   useEffect(() => {
     const updateSW = registerSW({ onNeedRefresh: () => setUpdate(() => () => updateSW(true)) });
@@ -115,7 +136,7 @@ function Shell() {
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return undefined;
     const onMessage = e => {
-      if (e.data?.type === 'NAVIGATE') setTab(new URL(e.data.url).searchParams.get('tab') ?? 'farm');
+      if (e.data?.type === 'NAVIGATE') { setSettings({ game: 'sfl' }); setTab(new URL(e.data.url).searchParams.get('tab') ?? 'farm'); }
       if (e.data?.type === 'RESUBSCRIBE' && settings.farmId && settings.pushEndpoint) {
         enablePush({ farmId: settings.farmId, prefs: settings.prefs }).then(endpoint => setSettings({ pushEndpoint: endpoint })).catch(() => {});
       }
@@ -130,7 +151,7 @@ function Shell() {
     return scheduleLocal(timers, settings.prefs, { sound: settings.sound, lang: settings.lang });
   }, [timers, settings.prefs, settings.localAlerts, settings.sound, settings.lang, settings.pushEndpoint]);
 
-  const readyCount = useMemo(() => groupTimers(timers).filter(g => g.readyAt <= now).reduce((n, g) => n + g.count, 0), [timers, now]);
+  const readyCount = useMemo(() => groupTimers(timers).filter(g => g.readyAt <= now && g.category !== 'sales' && g.category !== 'floatingIsland').reduce((n, g) => n + g.count, 0), [timers, now]);
   useEffect(() => {
     document.title = readyCount ? `(${readyCount}) SFL Pro` : 'SFL Pro — Sunflower Land';
     navigator.setAppBadge?.(readyCount || undefined)?.catch?.(() => {});
@@ -142,18 +163,25 @@ function Shell() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const needsSetup = !settings.farmId || !settings.lang;
+  const switchGame = id => {
+    setSettings({ game: id });
+    go(HOME[id]);
+  };
+  // O Yakkamon não precisa de Farm ID; só o idioma.
+  const needsSetup = !settings.lang || (game === 'sfl' && !settings.farmId);
+  const tabs = TABS[game];
+  const current = tabs.some(([id]) => id === tab) ? tab : HOME[game];
 
   return (
     <div className="app">
       <header className="topbar">
-        <div className="brand"><img src="/icons/icon-192.png" alt="" width="34" height="34" /> SFL <b>Pro</b></div>
+        {settings.lang ? <GameSwitch game={game} onChange={switchGame} /> : <div className="brand"><img src="/icons/icon-192.png" alt="" width="34" height="34" /> SFL <b>Pro</b></div>}
         <span className="spacer" />
-        {!needsSetup && (
+        {!needsSetup && game === 'sfl' && (
           <span className={`sync-dot ${data.error ? 'err' : ''}`}><i /> {data.error ? t('top.error') : data.updatedAt ? t('top.live') : '…'}</span>
         )}
         <button className="support-btn" onClick={() => setSupport(true)}><Icon name="heart" /> <span>{t('top.support')}</span></button>
-        {!needsSetup && (
+        {!needsSetup && game === 'sfl' && (
           <button className={`icon-btn ${data.loading ? 'spin' : ''}`} aria-label={t('top.refresh')} onClick={() => { data.refresh(); toast(t('top.refreshing')); }}>
             <Icon name="refresh" />
           </button>
@@ -168,7 +196,7 @@ function Shell() {
         </div>
       )}
 
-      {install.available && tab === 'farm' && !needsSetup && (
+      {install.available && current === HOME[game] && !needsSetup && (
         <div className="card install">
           <img src="/icons/icon-192.png" alt="" />
           <div className="grow"><b>{t('install.title')}</b><div className="muted" style={{ fontSize: 13 }}>{t('install.text')}</div></div>
@@ -179,21 +207,24 @@ function Shell() {
       <main>
         {needsSetup ? <Welcome settings={settings} /> : (
           <>
-            {tab === 'farm' && <Farm data={data} settings={settings} onOpenSettings={() => go('settings')} />}
-            {tab === 'market' && <Market data={data} settings={settings} />}
-            {tab === 'alerts' && <Alerts data={data} settings={settings} />}
-            {tab === 'settings' && <Settings settings={settings} install={install} />}
+            {current === 'farm' && <Farm data={data} settings={settings} onOpenSettings={() => go('settings')} />}
+            {current === 'market' && <Market data={data} settings={settings} />}
+            {current === 'alerts' && <Alerts data={data} settings={settings} />}
+            {current === 'yakka' && <YakkaHome settings={settings} />}
+            {current === 'rank' && <YakkaRank settings={settings} />}
+            {current === 'dex' && <YakkaDex settings={settings} />}
+            {current === 'settings' && <Settings settings={settings} install={install} />}
           </>
         )}
       </main>
 
       {!needsSetup && (
         <nav className="tabbar" aria-label="Menu">
-          {TABS.map(([id, icon]) => (
-            <button key={id} aria-current={tab === id ? 'page' : undefined} onClick={() => go(id)}>
+          {tabs.map(([id, icon]) => (
+            <button key={id} aria-current={current === id ? 'page' : undefined} onClick={() => go(id)}>
               <Icon name={icon} />
               {t(`tab.${id}`)}
-              {id === 'farm' && readyCount > 0 && tab !== 'farm' && <span className="badge">{readyCount}</span>}
+              {id === 'farm' && readyCount > 0 && current !== 'farm' && <span className="badge">{readyCount}</span>}
             </button>
           ))}
         </nav>

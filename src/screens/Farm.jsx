@@ -1,27 +1,140 @@
 import { useMemo, useState } from 'react';
-import { CATEGORIES, categoryLabel, extractTimers, groupTimers, isWanted } from '../../supabase/functions/_shared/farm-timers.js';
+import { CATEGORIES, categoryLabel, extractTimers, groupTimers, isWanted, mergeInto } from '../../supabase/functions/_shared/farm-timers.js';
 import { clockTime, countdown, flower, money, num } from '../lib/format.js';
-import { bumpkinImage, expansionInfo, farmLink, gemsToUsd, VIP_PRICES, vipInfo } from '../lib/farmInfo.js';
+import { bumpkinImages, expansionInfo, farmLink, gemsToUsd, VIP_PRICES, vipInfo } from '../lib/farmInfo.js';
+import { chapterMutants, mutantInfo } from '../lib/mutants.js';
 import { useNow } from '../lib/hooks.js';
 import { setSettings } from '../lib/store.js';
 import { locale, useT } from '../i18n.js';
 import { copyText, Empty, Icon, ItemImg, Notice, Ring, Sheet, Switch, useToast } from '../ui.jsx';
 
 const progressOf = (g, now) => (g.readyAt <= now ? 1 : g.startedAt ? (now - g.startedAt) / (g.readyAt - g.startedAt) : 0.5);
+// Categorias que têm cartão próprio e não entram na grade de timers.
+const OWN_CARD = new Set(['floatingIsland', 'sales']);
+// Quantidade mostrada: o que vai render (estimado) quando difere do número de pontos.
+const qtyOf = g => (g.amount != null && g.amount !== g.count ? Math.round(g.amount * 10) / 10 : g.count);
 
 function TimerTile({ group, now, onOpen }) {
   const t = useT();
   const left = group.readyAt - now;
   const ready = left <= 0;
+  const since = now - (group.firstAt ?? group.readyAt);
   return (
     <button className={`timer ${ready ? 'is-ready' : left < 10 * 60_000 ? 'is-soon' : ''}`} onClick={() => onOpen(group)} aria-label={`${group.name}: ${t('farm.tap')}`}>
-      <Ring name={group.image} progress={progressOf(group, now)} ready={ready} qty={group.count} />
+      <Ring name={group.image} progress={progressOf(group, now)} ready={ready} qty={qtyOf(group)} />
       <div className="grow">
         <div className="name ellipsis">{group.name}</div>
         <div className="meta">{ready ? t('farm.canCollect') : t('farm.at', { time: clockTime(group.readyAt) })}</div>
       </div>
-      <div className="cd">{countdown(left)}</div>
+      <div className="cd">{ready ? (since >= 60_000 ? t('farm.since', { time: countdown(since) }) : t('farm.now')) : countdown(left)}</div>
     </button>
+  );
+}
+
+function FloatingCard({ windows, now, onOpen }) {
+  const t = useT();
+  const open = windows.find(w => w.startAt <= now && w.endAt > now);
+  const next = windows.find(w => w.startAt > now);
+  if (!open && !next) return null;
+  return (
+    <button className={`card info-card ${open ? 'live' : ''}`} onClick={onOpen}>
+      <ItemImg name="Love Charm" size={34} />
+      <div className="grow">
+        <div className="kicker">Floating Island</div>
+        <strong>{open ? t('float.open') : t('float.in', { time: countdown(next.startAt - now) })}</strong>
+        <div className="sub ellipsis">{open ? t('float.closes', { time: clockTime(open.endAt), left: countdown(open.endAt - now) }) : t('float.at', { time: clockTime(next.startAt) })}</div>
+      </div>
+      <Icon name="chevronRight" className="chev-r" />
+    </button>
+  );
+}
+
+function FloatingSheet({ windows, farm, now, onClose }) {
+  const t = useT();
+  const shop = Object.values(farm?.floatingIsland?.shop ?? {});
+  return (
+    <Sheet open onClose={onClose} title="Floating Island" icon={<ItemImg name="Love Charm" size={32} />}>
+      <p className="hint">{t('float.text')}</p>
+      <h3 className="sheet-sub">{t('float.schedule')}</h3>
+      <div className="list">
+        {windows.map(w => {
+          const live = w.startAt <= now && w.endAt > now;
+          return (
+            <div className="list-row" key={w.startAt}>
+              <div className="grow"><div className="title">{clockTime(w.startAt)} – {clockTime(w.endAt)}</div><div className="sub">{live ? t('float.closesIn', { left: countdown(w.endAt - now) }) : t('float.opensIn', { left: countdown(w.startAt - now) })}</div></div>
+              <div className="val"><strong className={live ? 'leaf' : ''}>{live ? t('float.live') : countdown(w.startAt - now)}</strong></div>
+            </div>
+          );
+        })}
+      </div>
+      {shop.length > 0 && (
+        <>
+          <h3 className="sheet-sub">{t('float.shop')}</h3>
+          <div className="list">
+            {shop.map(s => (
+              <div className="list-row" key={s.name}>
+                <div className="thumb"><ItemImg name={s.name} size={28} /></div>
+                <div className="grow"><div className="title ellipsis">{s.name}</div><div className="sub">{s.type}</div></div>
+                <div className="val"><strong>{Object.entries(s.cost?.items ?? {}).map(([k, v]) => `${num(v, 0)} ${k}`).join(' + ')}</strong></div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </Sheet>
+  );
+}
+
+function MutantCard({ info, now, onOpen }) {
+  const t = useT();
+  return (
+    <button className="card info-card" onClick={onOpen}>
+      {/* A arte dos mutantes do próximo capítulo só entra no jogo quando ele começa. */}
+      <ItemImg name={info.current?.Chicken ?? 'Chicken'} size={34} />
+      <div className="grow">
+        <div className="kicker">{t('mut.title')}</div>
+        <strong className="ellipsis">{info.next ? t('mut.nextIn', { time: countdown(info.next.startAt - now) }) : info.current?.name}</strong>
+        <div className="sub ellipsis">{t('mut.owned', { n: info.owned, total: info.total })}</div>
+      </div>
+      <Icon name="chevronRight" className="chev-r" />
+    </button>
+  );
+}
+
+function MutantList({ chapter, farm }) {
+  const t = useT();
+  return (
+    <div className="list">
+      {chapterMutants(chapter, farm).map(m => (
+        <div className="list-row" key={m.name}>
+          <div className="thumb"><ItemImg name={m.name} size={28} /></div>
+          <div className="grow"><div className="title ellipsis">{m.name}</div><div className="sub">{t(`mut.from.${m.source}`)}</div></div>
+          <div className="val"><strong className={m.owned ? 'leaf' : 'dim'}>{m.owned ? t('mut.have') : t('mut.missing')}</strong></div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MutantSheet({ info, farm, now, lang, onClose }) {
+  const t = useT();
+  const date = ts => new Date(ts).toLocaleDateString(locale(lang), { day: '2-digit', month: 'short' });
+  return (
+    <Sheet open onClose={onClose} title={t('mut.title')} icon={<ItemImg name="Chicken" size={32} />}>
+      <p className="hint">{t('mut.text')}</p>
+      {info.current && (
+        <>
+          <h3 className="sheet-sub">{t('mut.current', { name: info.current.name })} · {t('mut.until', { date: date(info.current.endAt) })}</h3>
+          <MutantList chapter={info.current} farm={farm} />
+        </>
+      )}
+      {info.next && (
+        <>
+          <h3 className="sheet-sub">{t('mut.next', { name: info.next.name })} · {t('mut.startsIn', { time: countdown(info.next.startAt - now), date: date(info.next.startAt) })}</h3>
+          <MutantList chapter={info.next} farm={farm} />
+        </>
+      )}
+    </Sheet>
   );
 }
 
@@ -32,12 +145,15 @@ function Profile({ farm, land, farmId }) {
   const name = farm?.username ?? t('farm.yours');
   const island = farm?.island?.type ?? land?.land?.type;
   const vip = vipInfo(farm, land);
-  const avatar = bumpkinImage(farm);
+  const avatars = bumpkinImages(farm);
+  const [failed, setFailed] = useState(0);
+  const avatar = avatars[failed];
   const copy = async text => { if (await copyText(text)) toast(t('farm.copied')); };
   return (
     <div className="card profile">
       <div className="avatar bumpkin">
-        {avatar ? <img className="px" src={avatar} alt="" width="64" height="64" /> : <ItemImg name="Sunflower" size={36} />}
+        {/* Se a imagem pela roupa atual falhar, tenta a tokenUri salva; sem nenhuma, um girassol. */}
+        {avatar ? <img key={avatar} className="px" src={avatar} alt="" width="64" height="64" onError={() => setFailed(f => f + 1)} /> : <ItemImg name="Sunflower" size={36} />}
       </div>
       <div className="grow">
         <h1 className="ellipsis">{name}</h1>
@@ -234,6 +350,9 @@ function FlowerSheet({ farm, land, exchange, onClose }) {
 function TimerSheet({ group, farm, now, prefs, lang, onClose }) {
   const t = useT();
   const nodes = useMemo(() => extractTimers(farm).filter(x => x.category === group.category && x.name === group.name).sort((a, b) => a.readyAt - b.readyAt), [farm, group]);
+  const readyNodes = nodes.filter(n => n.readyAt <= now);
+  const readyAmount = readyNodes.reduce((s, n) => s + (n.amount ?? 1), 0);
+  const estimated = nodes.some(n => n.amount != null && n.amount !== 1);
   const wanted = isWanted(prefs, group.category, group.name);
   const toggle = v => setSettings(s => {
     const items = { ...s.prefs.items };
@@ -244,8 +363,10 @@ function TimerSheet({ group, farm, now, prefs, lang, onClose }) {
     <Sheet open onClose={onClose} title={group.name} icon={<ItemImg name={group.image} size={32} />}>
       <div className="stat-grid">
         <div className="card stat"><small>{t('detail.category')}</small><strong>{categoryLabel(group.category, lang)}</strong></div>
-        <div className="card stat"><small>{t('farm.ready')}</small><strong className="leaf">{nodes.filter(n => n.readyAt <= now).length}/{nodes.length}</strong></div>
+        <div className="card stat"><small>{t('farm.ready')}</small><strong className="leaf">{readyNodes.length}/{nodes.length}</strong></div>
+        {estimated && <div className="card stat"><small>{t('detail.yield')}</small><strong className="sun">≈ {num(readyAmount || nodes.reduce((s, n) => s + n.amount, 0), 1)}</strong></div>}
       </div>
+      {estimated && <p className="hint" style={{ marginTop: 8 }}>{t('detail.yieldHint')}</p>}
       <div className="list" style={{ marginTop: 12 }}>
         <div className="pref">
           <Icon name="bell" width="24" height="24" />
@@ -260,8 +381,8 @@ function TimerSheet({ group, farm, now, prefs, lang, onClose }) {
           return (
             <div className="list-row" key={n.key}>
               <Ring name={n.image} progress={progressOf(n, now)} ready={left <= 0} />
-              <div className="grow"><div className="title">#{i + 1}</div><div className="sub">{left <= 0 ? t('farm.canCollect') : t('farm.at', { time: clockTime(n.readyAt) })}</div></div>
-              <div className="val"><strong className={left <= 0 ? 'leaf' : ''}>{countdown(left)}</strong></div>
+              <div className="grow"><div className="title">#{i + 1}{n.amount != null && n.amount !== 1 ? ` · ≈ ${num(n.amount, 2)}` : ''}</div><div className="sub">{left <= 0 ? t('farm.canCollect') : t('farm.at', { time: clockTime(n.readyAt) })}</div></div>
+              <div className="val"><strong className={left <= 0 ? 'leaf' : ''}>{left <= 0 ? t('farm.since', { time: countdown(-left) }) : countdown(left)}</strong></div>
             </div>
           );
         })}
@@ -283,15 +404,17 @@ export default function Farm({ data, settings, onOpenSettings }) {
     // Tudo o que já está pronto do mesmo item vira um card só, não importa quando ficou pronto.
     const out = [];
     const at = minute * 60_000;
-    for (const g of groupTimers(extractTimers(farm))) {
+    for (const g of groupTimers(extractTimers(farm, at).filter(x => !OWN_CARD.has(x.category)))) {
       const same = g.readyAt <= at && out.find(x => x.readyAt <= at && x.category === g.category && x.name === g.name);
-      if (same) { same.count += g.count; same.keys.push(...g.keys); } else out.push({ ...g, keys: [...g.keys] });
+      if (same) mergeInto(same, g); else out.push({ ...g, keys: [...g.keys] });
     }
     return out;
   }, [farm, minute]);
 
   const vip = vipInfo(farm, land, now);
   const exp = useMemo(() => (farm ? expansionInfo(farm, vip.active) : null), [farm, vip.active]);
+  const windows = useMemo(() => (farm?.floatingIsland?.schedule ?? []).filter(w => w.endAt > minute * 60_000).sort((a, b) => a.startAt - b.startAt), [farm, minute]);
+  const mutants = useMemo(() => mutantInfo(farm, minute * 60_000), [farm, minute]);
   const readyCount = groups.filter(g => g.readyAt <= now).reduce((n, g) => n + g.count, 0);
   const upcoming = groups.find(g => g.readyAt > now);
   const presentCats = CATEGORIES.filter(c => groups.some(g => g.category === c.id));
@@ -319,13 +442,15 @@ export default function Farm({ data, settings, onOpenSettings }) {
         <div className="section info-row">
           <VipCard vip={vip} onOpen={() => setSheet('vip')} />
           {exp && <ExpansionCard exp={exp} onOpen={() => setSheet('exp')} />}
+          <FloatingCard windows={windows} now={now} onOpen={() => setSheet('float')} />
+          <MutantCard info={mutants} now={now} onOpen={() => setSheet('mutants')} />
         </div>
       )}
 
       {farm && upcoming && (
         <div className="section">
           <button className="card next" onClick={() => setSheet(upcoming)}>
-            <Ring name={upcoming.image} progress={progressOf(upcoming, now)} qty={upcoming.count} />
+            <Ring name={upcoming.image} progress={progressOf(upcoming, now)} qty={qtyOf(upcoming)} />
             <div className="grow">
               <div className="kicker">{t('farm.next')}</div>
               <h3 className="ellipsis">{upcoming.name}</h3>
@@ -385,7 +510,9 @@ export default function Farm({ data, settings, onOpenSettings }) {
 
       {sheet === 'vip' && <VipSheet vip={vip} farm={farm} exchange={exchange} currency={settings.currency} lang={lang} onClose={() => setSheet(null)} />}
       {sheet === 'exp' && exp && <ExpansionSheet exp={exp} onClose={() => setSheet(null)} />}
-      {sheet === 'flower' && <FlowerSheet farm={farm} land={land} exchange={exchange} onClose={() => setSheet(null)} />}
+      {sheet === 'float' && <FloatingSheet windows={windows} farm={farm} now={now} onClose={() => setSheet(null)} />}
+      {sheet === 'mutants' && <MutantSheet info={mutants} farm={farm} now={now} lang={lang} onClose={() => setSheet(null)} />}
+      {sheet === 'flower' &&<FlowerSheet farm={farm} land={land} exchange={exchange} onClose={() => setSheet(null)} />}
       {sheet && typeof sheet === 'object' && <TimerSheet group={sheet} farm={farm} now={now} prefs={settings.prefs} lang={lang} onClose={() => setSheet(null)} />}
     </div>
   );

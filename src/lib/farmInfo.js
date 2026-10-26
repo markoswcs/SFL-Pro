@@ -2,6 +2,7 @@
 // Preços e regras vêm do código oficial do jogo (features/game/lib/vipAccess.ts,
 // components/modal/components/BuyGems.tsx e types/expansions.ts).
 import { EXPANSION_REQUIREMENTS, ISLAND_MAX_EXPANSION } from './expansions.js';
+import { BUMPKIN_ITEM_IDS } from './bumpkin-ids.js';
 
 export const VIP_PRICES = { '1_MONTH': 1250, '3_MONTHS': 1500, '2_YEARS': 11500 };
 
@@ -23,9 +24,25 @@ export function vipInfo(farm, land, now = Date.now()) {
   return { lifetime, active, expiresAt, daysLeft: Math.max(0, Math.floor(msLeft / 86400_000)), msLeft };
 }
 
-export function bumpkinImage(farm, size = 100) {
+// Ordem das peças na URL da imagem (lib/utils/tokenUriBuilder.ts do jogo).
+const SLOTS = ['background', 'body', 'hair', 'shirt', 'pants', 'shoes', 'tool', 'hat', 'necklace', 'secondaryTool', 'coat', 'onesie', 'suit', 'wings', 'dress', 'beard', 'aura', 'eyes', 'mouth'];
+const ANIMATIONS = 'https://animations.sunflower-land.com/bumpkin_image';
+
+/**
+ * Imagens do bumpkin em ordem de preferência. A primeira é montada com a roupa equipada agora
+ * (a `tokenUri` salva pode estar velha ou faltar em fazendas novas); a segunda é a `tokenUri`.
+ */
+export function bumpkinImages(farm, size = 100) {
+  const out = [];
+  const equipped = farm?.bumpkin?.equipped;
+  if (equipped) {
+    const ids = SLOTS.map(slot => (equipped[slot] ? BUMPKIN_ITEM_IDS[equipped[slot]] ?? 0 : 0));
+    while (ids.length && !ids[ids.length - 1]) ids.pop();
+    if (ids.some(Boolean)) out.push(`${ANIMATIONS}/0_v1_${ids.join('_')}/${size}`);
+  }
   const uri = farm?.bumpkin?.tokenUri;
-  return uri ? `https://animations.sunflower-land.com/bumpkin_image/${uri}/${size}` : null;
+  if (uri) out.push(`${ANIMATIONS}/${uri}/${size}`);
+  return out;
 }
 
 const hasCollectible = (farm, name) => !!(farm?.collectibles?.[name]?.length || farm?.home?.collectibles?.[name]?.length);

@@ -10,7 +10,10 @@ const KNOWN = {
   crops: Object.keys(CROP_MS),
   fruits: Object.keys(FRUIT_MS),
   greenhouse: Object.keys(GREENHOUSE_MS),
-  animals: ['Chicken', 'Cow', 'Sheep'],
+  animals: ['Chicken', 'Cow', 'Sheep', 'Pig'],
+  animalLove: ['Chicken', 'Cow', 'Sheep', 'Pig'],
+  // Vendas: uma chave só, para não listar cada item já vendido.
+  sales: [],
 };
 
 function CategoryRow({ cat, prefs, names, lang, onToggleCat, onToggleItem }) {
@@ -67,7 +70,7 @@ export default function Alerts({ data, settings }) {
 
   const names = useMemo(() => {
     const present = {};
-    for (const x of extractTimers(data.farm)) (present[x.category] ??= new Set()).add(x.name);
+    for (const x of extractTimers(data.farm)) if (x.category !== 'sales') (present[x.category] ??= new Set()).add(x.name);
     return Object.fromEntries(CATEGORIES.map(c => [c.id, [...new Set([...(KNOWN[c.id] ?? []), ...(present[c.id] ?? [])])]]));
   }, [data.farm]);
 

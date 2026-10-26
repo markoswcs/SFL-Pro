@@ -6,7 +6,7 @@ import { setSettings } from '../lib/store.js';
 import { locale, useT } from '../i18n.js';
 import { Empty, Icon, ItemImg, Notice } from '../ui.jsx';
 
-const TABS = ['prices', 'inventory', 'auctions', 'news'];
+const TABS = ['prices', 'inventory', 'sales', 'news'];
 
 function SearchBox({ value, onChange, placeholder }) {
   return (
@@ -109,44 +109,43 @@ function Inventory({ farm, prices, rate, currency }) {
   );
 }
 
-function Auctions({ lang }) {
+function Sales({ farm, rate, currency, lang }) {
   const t = useT();
-  const { data, error, loading, reload } = useResource('auctions', () => api.community('auctions'), { ttl: 120_000 });
-  if (error) return <Notice kind="err">{error.message}</Notice>;
-  if (loading && !data) return <div className="skeleton" style={{ height: 240 }} />;
-  const now = Date.now();
-  // A API devolve o histórico inteiro; mostramos o que está ao vivo, o que vem por aí e o que acabou nas últimas 24 h.
-  const all = data?.data?.auctions ?? data?.auctions ?? [];
-  const current = all
-    .filter(a => (a.endAt ?? Infinity) > now - 86400_000)
-    .sort((a, b) => (a.endAt <= now) - (b.endAt <= now) || a.startAt - b.startAt);
-  // Entre temporadas não há leilão aberto; aí mostramos os últimos que aconteceram.
-  const list = current.length ? current.slice(0, 60) : [...all].sort((a, b) => b.endAt - a.endAt).slice(0, 20);
-  if (!list.length) return <Empty image="Gold" title={t('market.noAuctions')} />;
+  const rows = useMemo(() => Object.entries(farm?.trades?.listings ?? {})
+    .map(([id, l]) => {
+      const [name, qty] = Object.entries(l.items ?? {})[0] ?? ['?', 0];
+      return { id, name, qty: Number(qty), sfl: Number(l.sfl ?? 0), got: Math.max(0, Number(l.sfl ?? 0) - Number(l.tax ?? 0)), soldAt: l.fulfilledAt, createdAt: l.createdAt };
+    })
+    .sort((a, b) => (b.soldAt ?? 0) - (a.soldAt ?? 0) || b.createdAt - a.createdAt), [farm]);
+  if (!farm) return <Notice>{t('market.needFarm')}</Notice>;
+  const sold = rows.filter(r => r.soldAt);
+  const open = rows.filter(r => !r.soldAt);
+  const received = sold.reduce((s, r) => s + r.got, 0);
+  const when = ts => new Date(ts).toLocaleString(locale(lang), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const Row = ({ r }) => (
+    <div className="list-row">
+      <div className="thumb"><ItemImg name={r.name} size={28} /></div>
+      <div className="grow">
+        <div className="title ellipsis">{num(r.qty)} {r.name}</div>
+        <div className="sub">{r.soldAt ? t('sales.soldAt', { when: when(r.soldAt) }) : t('sales.listedAt', { when: when(r.createdAt) })}</div>
+      </div>
+      <div className="val">
+        <strong className={r.soldAt ? 'leaf' : ''}>{r.soldAt ? '+' : ''}{flower(r.soldAt ? r.got : r.sfl)}</strong>
+        <small>{rate ? money((r.soldAt ? r.got : r.sfl) * rate, currency) : 'FLOWER'}</small>
+      </div>
+    </div>
+  );
   return (
     <>
-    {!current.length && <p className="hint" style={{ margin: '0 2px 12px' }}>{t('market.recent')}</p>}
-    <div className="list">
-      {list.map((a, i) => {
-        const name = a.wearable ?? a.collectible ?? a.nft ?? a.name ?? 'Item';
-        const live = (a.startAt ?? 0) <= now && (a.endAt ?? Infinity) > now;
-        const cost = [a.sfl && `${a.sfl} FLOWER`, a.coins && t('market.coins', { n: num(a.coins) }), ...Object.entries(a.ingredients ?? {}).map(([k, v]) => `${v} ${k}`)].filter(Boolean).join(' + ');
-        return (
-          <div className="list-row" key={a.auctionId ?? i}>
-            <div className="thumb"><ItemImg name={name} size={28} /></div>
-            <div className="grow">
-              <div className="title ellipsis">{name}</div>
-              <div className="sub ellipsis">{cost || t('market.noCost')}{a.supply ? ` · ${t('market.units', { n: num(a.supply, 0) })}` : ''}</div>
-            </div>
-            <div className="val">
-              <strong className={live ? 'leaf' : 'dim'}>{live ? t('market.live') : a.startAt > now ? t('market.soon') : t('market.ended')}</strong>
-              {a.startAt && <small>{new Date(live ? a.endAt : a.startAt).toLocaleString(locale(lang), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</small>}
-            </div>
-          </div>
-        );
-      })}
-      <button className="btn btn-ghost btn-sm" style={{ margin: 12 }} onClick={reload}>{t('update.action')}</button>
-    </div>
+      <div className="stat-grid">
+        <div className="card stat"><small>{t('sales.toClaim')}</small><strong className="sun">{flower(received)}</strong></div>
+        <div className="card stat"><small>{t('market.in', { cur: currency.toUpperCase() })}</small><strong>{rate ? money(received * rate, currency) : '—'}</strong></div>
+        <div className="card stat"><small>{t('sales.open')}</small><strong>{open.length}</strong></div>
+      </div>
+      <p className="hint" style={{ margin: '10px 2px 14px' }}>{t('sales.hint')}</p>
+      {sold.length > 0 && <><h3 className="sheet-sub">{t('sales.sold')}</h3><div className="list">{sold.map(r => <Row key={r.id} r={r} />)}</div></>}
+      {open.length > 0 && <><h3 className="sheet-sub">{t('sales.listed')}</h3><div className="list">{open.map(r => <Row key={r.id} r={r} />)}</div></>}
+      {!rows.length && <Empty image="Flower" title={t('sales.none')} />}
     </>
   );
 }
@@ -178,7 +177,7 @@ function News() {
 
 export default function Market({ data, settings }) {
   const t = useT();
-  const [tab, setTab] = useState('prices');
+  const [tab, setTab] = useState(() => (new URLSearchParams(location.search).get('view') === 'sales' ? 'sales' : 'prices'));
   const rate = data.exchange?.sfl?.[settings.currency] ?? 0;
   return (
     <div className="screen">
@@ -195,7 +194,7 @@ export default function Market({ data, settings }) {
       </div>
       {tab === 'prices' && <Prices prices={data.prices} rate={rate} currency={settings.currency} favorites={settings.favorites} />}
       {tab === 'inventory' && <Inventory farm={data.farm} prices={data.prices} rate={rate} currency={settings.currency} />}
-      {tab === 'auctions' && <Auctions lang={settings.lang} />}
+      {tab === 'sales' && <Sales farm={data.farm} rate={rate} currency={settings.currency} lang={settings.lang} />}
       {tab === 'news' && <News />}
     </div>
   );

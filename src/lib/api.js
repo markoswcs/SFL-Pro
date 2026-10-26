@@ -38,4 +38,5 @@ export const api = {
   prices: () => call(`${SFL_WORLD}/v1/prices`).then(d => d?.data ?? d),
   exchange: () => call(`${SFL_WORLD}/v1.1/exchange`),
   community: (type, params = {}) => call(`${GAME}/data?${new URLSearchParams({ type, ...params })}`),
+  yakkaLeaderboard: () => call('https://api.yakkamon.com/leaderboard'),
 };

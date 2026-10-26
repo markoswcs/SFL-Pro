@@ -27,8 +27,8 @@ async function callServer(body) {
   return data;
 }
 
-// O idioma vai junto das preferências para o servidor escrever as notificações no idioma certo.
-const withLang = prefs => ({ ...prefs, lang: getSettings().lang ?? 'pt' });
+// Idioma e fuso vão junto das preferências para o servidor escrever o aviso no idioma e na hora certos.
+const withLang = prefs => ({ ...prefs, lang: getSettings().lang ?? 'pt', tz: Intl.DateTimeFormat().resolvedOptions().timeZone });
 
 export async function getSubscription() {
   if (!pushSupported()) return null;

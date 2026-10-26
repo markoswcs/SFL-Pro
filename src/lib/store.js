@@ -11,6 +11,8 @@ const DEFAULTS = {
   pushEndpoint: null,
   favorites: [],
   lang: null,
+  game: 'sfl',
+  yakkaName: '',
 };
 
 function load() {

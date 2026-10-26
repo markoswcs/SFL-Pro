@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { itemImage } from './lib/format.js';
+import { itemImage, num } from './lib/format.js';
 
 const PATHS = {
   farm: 'M3 11 12 4l9 7M5 10v10h14V10M9 20v-6h6v6',
@@ -24,6 +24,9 @@ const PATHS = {
   heart: 'M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z',
   globe: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Zm-10-10h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20Z',
   chevronRight: 'm9 6 6 6-6 6',
+  egg: 'M12 3c3.5 0 6.5 5.2 6.5 10a6.5 6.5 0 0 1-13 0C5.5 8.2 8.5 3 12 3Zm-3 10.5 2 1.5 2-2 2 1.5',
+  trophy: 'M8 4h8v5a4 4 0 0 1-8 0V4Zm0 2H5a3 3 0 0 0 3 4m8-4h3a3 3 0 0 1-3 4m-4 3v4m-4 3h8m-6 0 .5-3h3l.5 3',
+  book: 'M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2V5Zm0 16a2 2 0 0 1 2-2h13M8 7h7',
 };
 
 export function Icon({ name, ...props }) {
@@ -61,7 +64,7 @@ export function Ring({ name, progress, ready, qty }) {
         <circle className="bar" cx="28" cy="28" r={r} strokeDasharray={c} strokeDashoffset={c * (1 - p)} />
       </svg>
       <ItemImg name={name} size={30} />
-      {qty > 1 && <span className="qty">{qty}</span>}
+      {qty > 1 && <span className="qty">{qty >= 1000 ? num(qty, 0) : String(qty).replace('.', ',')}</span>}
     </div>
   );
 }

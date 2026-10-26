@@ -1,53 +1,51 @@
-// Roda a cada 15 segundos pelo pg_cron.
+// Roda a cada 10 segundos pelo pg_cron.
 // 1) Relê em lote as fazendas cuja hora de atualizar chegou e guarda os timers.
 // 2) Envia push para tudo o que ficou pronto, respeitando as preferências de cada aparelho.
 import { displayTag, groupTimers, isWanted, notificationText } from '../_shared/farm-timers.js';
 import { db, fetchFarms, itemImage, json, sendPush, storeTimers, type Device } from '../_shared/server.ts';
 
-const REFRESH_MS = 5 * 60_000; // a mesma fazenda é relida a cada 5 min para pegar o que foi plantado
+const REFRESH_MS = 2 * 60_000; // a mesma fazenda é relida a cada 2 min para pegar o que foi plantado ou vendido
 const BATCH = 40; // fazendas por chamada; o limite da resposta é 5,5 MB
-const MAX_BATCHES = 2; // a API aceita ~1 chamada a cada 5 s por IP; o cron roda a cada 15 s
 const SUMMARY_AFTER = 3; // mais que isso no mesmo minuto vira uma notificação só
+// Vendas e a ilha flutuante sempre chegam sozinhas: o valor recebido e a hora de fechar importam.
+const NEVER_SUMMARIZE = new Set(['sales', 'floatingIsland']);
 
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-const tagOf = (g: { category: string; name: string; readyAt: number }) => `${g.category}:${g.name}:${Math.round(g.readyAt / 60_000)}`;
+const tagOf = (g: { category: string; name: string; readyAt: number; keys?: string[] }) =>
+  g.category === 'sales' ? `sales:${g.keys?.[0]}` : `${g.category}:${g.name}:${Math.round(g.readyAt / 60_000)}`;
 
 async function refreshFarms() {
   // Reserva as fazendas no banco (SKIP LOCKED) para duas execuções seguidas não lerem a mesma.
-  const { data: due } = await db.rpc('sflpro_claim_due_farms', { max_rows: BATCH * MAX_BATCHES });
+  // Uma chamada de getFarms por execução: a API aceita ~1 a cada 5 s por IP e o cron roda a cada 10 s.
+  const { data: due } = await db.rpc('sflpro_claim_due_farms', { max_rows: BATCH });
   if (!due?.length) return { refreshed: 0, failed: 0 };
 
   let refreshed = 0;
   let failed = 0;
-  for (let i = 0; i < due.length; i += BATCH) {
-    if (i > 0) await sleep(5_500);
-    const chunk = due.slice(i, i + BATCH);
-    try {
-      const { farms } = await fetchFarms(chunk.map(f => Number(f.farm_id)));
-      for (const row of chunk) {
-        const farm = farms[String(row.farm_id)];
-        const now = new Date();
-        if (!farm) {
-          // Ficou de fora (não existe ou estourou o tamanho): tenta de novo com espera crescente.
-          failed++;
-          await db.from('sflpro_farms').update({
-            last_error: 'Fazenda não retornada pela API', fail_count: row.fail_count + 1,
-            next_fetch_at: new Date(now.getTime() + Math.min(60, 2 ** row.fail_count) * 60_000).toISOString(),
-          }).eq('farm_id', row.farm_id);
-          continue;
-        }
-        await storeTimers(Number(row.farm_id), farm);
+  try {
+    const { farms } = await fetchFarms(due.map(f => Number(f.farm_id)));
+    for (const row of due) {
+      const farm = farms[String(row.farm_id)];
+      const now = new Date();
+      if (!farm) {
+        // Ficou de fora (não existe ou estourou o tamanho): tenta de novo com espera crescente.
+        failed++;
         await db.from('sflpro_farms').update({
-          last_fetch_at: now.toISOString(), last_error: null, fail_count: 0, updated_at: now.toISOString(),
-          next_fetch_at: new Date(now.getTime() + REFRESH_MS).toISOString(),
+          last_error: 'Fazenda não retornada pela API', fail_count: row.fail_count + 1,
+          next_fetch_at: new Date(now.getTime() + Math.min(60, 2 ** row.fail_count) * 60_000).toISOString(),
         }).eq('farm_id', row.farm_id);
-        refreshed++;
+        continue;
       }
-    } catch (error) {
-      console.error('lote falhou', (error as Error).message);
-      failed += chunk.length;
-      break; // provavelmente limite da API; o resto fica para o próximo minuto
+      await storeTimers(Number(row.farm_id), farm);
+      await db.from('sflpro_farms').update({
+        last_fetch_at: now.toISOString(), last_error: null, fail_count: 0, updated_at: now.toISOString(),
+        next_fetch_at: new Date(now.getTime() + REFRESH_MS).toISOString(),
+      }).eq('farm_id', row.farm_id);
+      refreshed++;
     }
+  } catch (error) {
+    // Provavelmente limite da API; as fazendas reservadas voltam na próxima rodada.
+    console.error('lote falhou', (error as Error).message);
+    failed += due.length;
   }
   return { refreshed, failed };
 }
@@ -65,7 +63,8 @@ async function dispatch() {
   let sent = 0;
   for (const [farmId, rows] of byFarm) {
     const groups = groupTimers(rows.map(r => ({
-      key: r.timer_key, category: r.category, name: r.name, image: r.image, readyAt: new Date(r.ready_at).getTime(), count: 1,
+      key: r.timer_key, category: r.category, name: r.name, image: r.image, readyAt: new Date(r.ready_at).getTime(),
+      count: 1, amount: r.amount == null ? 1 : Number(r.amount), meta: r.meta ?? null,
     })));
     const tags = groups.map(tagOf);
     const { data: already } = await db.from('sflpro_sent').select('tag').eq('farm_id', farmId).in('tag', tags);
@@ -83,22 +82,26 @@ async function dispatch() {
 
     const { data: devices } = await db.from('sflpro_devices').select('*').eq('farm_id', farmId);
     for (const device of (devices ?? []) as Device[]) {
+      const lang = device.prefs?.lang === 'en' ? 'en' : 'pt';
+      const tz = typeof device.prefs?.tz === 'string' ? device.prefs.tz : undefined;
       const wanted = toSend.filter(g => isWanted(device.prefs, g.category, g.name));
-      if (!wanted.length) continue;
-      if (wanted.length > SUMMARY_AFTER) {
-        const total = wanted.reduce((n, g) => n + g.count, 0);
-        const names = [...new Set(wanted.map(g => g.name))];
+      const solo = wanted.filter(g => NEVER_SUMMARIZE.has(g.category));
+      const rest = wanted.filter(g => !NEVER_SUMMARIZE.has(g.category));
+      if (rest.length > SUMMARY_AFTER) {
+        const names = [...new Set(rest.map(g => g.name))];
         await sendPush(device, {
-          title: device.prefs?.lang === 'en' ? `${total} things ready on your farm` : `${total} coisas prontas na fazenda`,
-          body: names.slice(0, 5).join(', ') + (names.length > 5 ? (device.prefs?.lang === 'en' ? ` and ${names.length - 5} more` : ` e mais ${names.length - 5}`) : ''),
-          icon: itemImage(wanted[0].image), tag: `sum:${Math.round(now / 60_000)}`, url: '/?tab=farm', timestamp: now,
+          title: lang === 'en' ? `${rest.length} things ready on your farm` : `${rest.length} coisas prontas na fazenda`,
+          body: names.slice(0, 5).join(', ') + (names.length > 5 ? (lang === 'en' ? ` and ${names.length - 5} more` : ` e mais ${names.length - 5}`) : ''),
+          icon: itemImage(rest[0].image), tag: `sum:${Math.round(now / 60_000)}`, url: '/?tab=farm', timestamp: now,
         }) && sent++;
-        continue;
+      } else {
+        solo.push(...rest);
       }
-      for (const g of wanted) {
-        const { title, body } = notificationText(g, device.prefs?.lang === 'en' ? 'en' : 'pt');
+      for (const g of solo) {
+        const { title, body } = notificationText(g, lang, tz);
         // O ícone é a arte do próprio item (pedra, trigo, vaca…); o aparelho baixa a imagem ao exibir.
-        await sendPush(device, { title, body, icon: itemImage(g.image), tag: displayTag(g), url: '/?tab=farm', timestamp: g.readyAt }) && sent++;
+        const url = g.category === 'sales' ? '/?tab=market&view=sales' : '/?tab=farm';
+        await sendPush(device, { title, body, icon: itemImage(g.image), tag: displayTag(g), url, timestamp: g.readyAt }) && sent++;
       }
     }
   }

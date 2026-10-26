@@ -3,6 +3,7 @@
 // Modelo antigo: o jogo grava o início já adiantado pelos boosts, então pronto = início + tempo base.
 // Modelo novo: o nó guarda `baseDurationMs`; usamos início + baseDurationMs. Boosts temporários
 // podem adiantar alguns minutos, o que a próxima leitura da fazenda corrige.
+import { cropYield, fruitYield, yieldContext } from './yields.js';
 
 const H = 3600_000;
 const MIN = 60_000;
@@ -56,6 +57,7 @@ export const CATEGORIES = [
   { id: 'oilReserves', label: 'Petróleo', en: 'Oil', image: 'Oil' },
   { id: 'salt', label: 'Sal', en: 'Salt', image: 'Salt' },
   { id: 'animals', label: 'Animais', en: 'Animals', image: 'Chicken' },
+  { id: 'animalLove', label: 'Carinho nos animais', en: 'Animal love', image: 'Petting Hand' },
   { id: 'beehives', label: 'Colmeias', en: 'Beehives', image: 'Honey' },
   { id: 'composters', label: 'Composteiras', en: 'Composters', image: 'Sprout Mix' },
   { id: 'cooking', label: 'Cozinha', en: 'Cooking', image: 'Pumpkin Soup' },
@@ -63,6 +65,8 @@ export const CATEGORIES = [
   { id: 'agingShed', label: 'Galpão de Cura', en: 'Aging Shed', image: 'Refined Salt' },
   { id: 'craftingBox', label: 'Caixa de Criação', en: 'Crafting Box', image: 'Crafting Box' },
   { id: 'daily', label: 'Baú diário', en: 'Daily chest', image: 'Treasure Key' },
+  { id: 'floatingIsland', label: 'Floating Island', en: 'Floating Island', image: 'Love Charm' },
+  { id: 'sales', label: 'Vendas no mercado', en: 'Market sales', image: 'Flower' },
 ];
 
 export const CATEGORY_BY_ID = Object.fromEntries(CATEGORIES.map(c => [c.id, c]));
@@ -78,21 +82,24 @@ function nodeReadyAt(inner, timeKey, baseMs) {
 
 /**
  * Converte o estado bruto da fazenda (resposta de /community/farms/:id) em timers.
- * Cada timer: { key, category, name, image, readyAt, count }.
+ * Cada timer: { key, category, name, image, readyAt, startedAt, count, amount, meta }.
+ * `count` é a quantidade de nós (canteiros, animais…); `amount` é o que vai render (estimado).
  * `key` é estável entre leituras para o servidor não repetir a mesma notificação.
  */
 export function extractTimers(farm, now = Date.now()) {
   if (!farm) return [];
   const out = [];
-  const push = (category, name, readyAt, key, image = name, startedAt = null) => {
+  const yields = yieldContext(farm, now);
+  const push = (category, name, readyAt, key, image = name, startedAt = null, amount = 1, meta = null) => {
     if (!readyAt || !Number.isFinite(readyAt)) return;
-    out.push({ key: `${category}:${key}`, category, name, image: image ?? name, readyAt, startedAt, count: 1 });
+    out.push({ key: `${category}:${key}`, category, name, image: image ?? name, readyAt, startedAt, count: 1, amount, meta });
   };
 
   for (const [id, plot] of Object.entries(farm.crops ?? {})) {
     const c = plot?.crop;
     if (!c?.name || !placed(plot)) continue;
-    push('crops', c.name, nodeReadyAt(c, 'plantedAt', CROP_MS[c.name] ?? 0), id, c.name, c.plantedAt);
+    const ms = CROP_MS[c.name] ?? 0;
+    push('crops', c.name, nodeReadyAt(c, 'plantedAt', ms), id, c.name, c.plantedAt, c.amount ?? cropYield(yields, c.name, plot, ms));
   }
 
   for (const [id, pot] of Object.entries(farm.greenhouse?.pots ?? {})) {
@@ -107,7 +114,7 @@ export function extractTimers(farm, now = Date.now()) {
     const start = f.harvestedAt || f.plantedAt;
     const ms = FRUIT_MS[f.name] ?? 0;
     const readyAt = f.baseDurationMs !== undefined ? start + f.baseDurationMs : start + ms;
-    push('fruits', f.name, readyAt, id, f.name, start);
+    push('fruits', f.name, readyAt, id, f.name, start, f.amount ?? fruitYield(yields, f.name, patch));
   }
 
   for (const [id, bed] of Object.entries(farm.flowers?.flowerBeds ?? {})) {
@@ -142,10 +149,17 @@ export function extractTimers(farm, now = Date.now()) {
     push('salt', 'Salt', s.nextChargeAt, id, 'Salt', s.claimedAt);
   }
 
-  const animals = [...Object.values(farm.henHouse?.animals ?? {}), ...Object.values(farm.barn?.animals ?? {})];
+  // Ciclo do animal: coleta → dorme → (1/3 do sono) pode receber carinho → acorda e pede comida.
+  // O carinho libera em asleepAt + 1/3 do sono e de novo 1/3 depois do último (loveAnimal.ts).
+  const animals = ['henHouse', 'barn', 'pigpen'].flatMap(b => Object.values(farm[b]?.animals ?? {}));
   for (const a of animals) {
     if (!a?.type || !a.awakeAt) continue;
     push('animals', a.type, a.awakeAt, a.id, a.type, a.asleepAt);
+    if (a.asleepAt && a.awakeAt > Math.max(a.asleepAt, now)) {
+      const third = (a.awakeAt - a.asleepAt) / 3;
+      const loveAt = Math.max(a.asleepAt + third, (a.lovedAt ?? 0) + third);
+      if (loveAt < a.awakeAt) push('animalLove', a.type, loveAt, a.id, a.type, a.asleepAt, 1, { item: a.item });
+    }
   }
 
   for (const [id, hive] of Object.entries(farm.beehives ?? {})) {
@@ -171,7 +185,7 @@ export function extractTimers(farm, now = Date.now()) {
 
   const machine = farm.buildings?.['Crop Machine']?.[0];
   for (const q of machine?.queue ?? []) {
-    if (q?.readyAt) push('cropMachine', q.crop, q.readyAt, `${q.crop}-${q.startTime ?? q.readyAt}`);
+    if (q?.readyAt) push('cropMachine', q.crop, q.readyAt, `${q.crop}-${q.startTime ?? q.readyAt}`, q.crop, q.startTime, Number(q.amount) || 1);
   }
 
   for (const [rack, list] of Object.entries(farm.agingShed?.racks ?? {})) {
@@ -192,23 +206,45 @@ export function extractTimers(farm, now = Date.now()) {
     push('daily', 'Treasure Key', next.getTime(), 'chest', 'Treasure Key', chestAt);
   }
 
+  // A ilha flutuante abre em janelas de 30 min; avisamos na abertura, com a hora de fechar.
+  for (const w of farm.floatingIsland?.schedule ?? []) {
+    if (w?.startAt && w.endAt > now) push('floatingIsland', 'Floating Island', w.startAt, `${w.startAt}`, 'Love Charm', null, 1, { endAt: w.endAt });
+  }
+
+  // Anúncios do mercado que alguém comprou: o jogo marca fulfilledAt. Recebido = preço − taxa.
+  for (const [id, l] of Object.entries(farm.trades?.listings ?? {})) {
+    if (!l?.fulfilledAt) continue;
+    const [item, qty] = Object.entries(l.items ?? {})[0] ?? ['Flower', 1];
+    const received = Math.max(0, Number(l.sfl ?? 0) - Number(l.tax ?? 0));
+    push('sales', item, l.fulfilledAt, id, item, l.createdAt, Number(qty) || 1, { flower: Math.round(received * 1e6) / 1e6 });
+  }
+
   return out.sort((a, b) => a.readyAt - b.readyAt);
 }
+
+/** Cada janela da ilha flutuante tem a própria hora de fechar, então não soma com outra. */
+const SOLO = new Set(['floatingIsland']);
 
 /** Agrupa timers da mesma categoria/item que ficam prontos com até 60s de diferença. */
 export function groupTimers(timers, windowMs = 60_000) {
   const groups = [];
   for (const t of timers) {
-    const g = groups.find(x => x.category === t.category && x.name === t.name && Math.abs(x.readyAt - t.readyAt) <= windowMs);
-    if (g) {
-      g.count += 1;
-      g.keys.push(t.key);
-      g.readyAt = Math.max(g.readyAt, t.readyAt);
-    } else {
-      groups.push({ ...t, keys: [t.key] });
-    }
+    const g = !SOLO.has(t.category) && groups.find(x => x.category === t.category && x.name === t.name && Math.abs(x.readyAt - t.readyAt) <= windowMs);
+    if (g) mergeInto(g, t);
+    else groups.push({ ...t, amount: t.amount ?? 1, firstAt: t.readyAt, keys: [t.key], meta: t.meta ? { ...t.meta } : null });
   }
   return groups.sort((a, b) => a.readyAt - b.readyAt);
+}
+
+/** Soma um timer (ou grupo) num grupo, guardando a primeira e a última hora de pronto. */
+export function mergeInto(g, t) {
+  g.count += t.count ?? 1;
+  g.amount = Math.round(((g.amount ?? 1) + (t.amount ?? 1)) * 100) / 100;
+  g.keys.push(...(t.keys ?? [t.key]));
+  g.readyAt = Math.max(g.readyAt, t.readyAt);
+  g.firstAt = Math.min(g.firstAt ?? g.readyAt, t.firstAt ?? t.readyAt);
+  if (t.meta?.flower) g.meta = { ...g.meta, flower: Math.round(((g.meta?.flower ?? 0) + t.meta.flower) * 1e6) / 1e6 };
+  return g;
 }
 
 /** Preferências: { enabled, categories: {id: bool}, items: {"cat:Nome": bool} } */
@@ -225,18 +261,48 @@ export function defaultPrefs() {
 
 export const categoryLabel = (id, lang = 'pt') => (lang === 'en' ? CATEGORY_BY_ID[id]?.en : CATEGORY_BY_ID[id]?.label) ?? id;
 
-export function notificationText(group, lang = 'pt') {
+const fmt = (n, lang) => new Intl.NumberFormat(lang === 'en' ? 'en-US' : 'pt-BR', { maximumFractionDigits: n < 1 ? 4 : 2 }).format(n);
+
+/** Texto da notificação. `tz` é o fuso do aparelho, para a hora de fechar da ilha sair certa. */
+export function notificationText(group, lang = 'pt', tz = 'America/Sao_Paulo') {
   const label = categoryLabel(group.category, lang);
   const n = group.count;
-  if (lang === 'en') {
-    if (group.category === 'daily') return { title: 'Daily chest unlocked!', body: 'Open it before the day resets.' };
-    if (group.category === 'animals') return { title: `${group.name} is awake!`, body: `${n} ${n > 1 ? 'animals are' : 'animal is'} ready · ${label}` };
-    return { title: `${group.name} ready!`, body: `${n} ready to collect · ${label}` };
+  const qty = fmt(group.amount ?? n, lang);
+  const en = lang === 'en';
+  const time = ts => {
+    try { return new Date(ts).toLocaleTimeString(en ? 'en-US' : 'pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: tz }); } catch { return new Date(ts).toISOString().slice(11, 16); }
+  };
+  switch (group.category) {
+    case 'daily':
+      return en ? { title: 'Daily chest unlocked!', body: 'Open it before the day resets.' } : { title: 'Baú diário liberado!', body: 'Abra antes de virar o dia.' };
+    case 'animals':
+      return en
+        ? { title: `${group.name} is awake!`, body: `${n} ${n > 1 ? 'animals are' : 'animal is'} hungry · ${label}` }
+        : { title: `${group.name} acordou!`, body: `${n} ${n > 1 ? 'animais pedindo' : 'animal pedindo'} comida · ${label}` };
+    case 'animalLove': {
+      const item = group.meta?.item;
+      return en
+        ? { title: `${group.name} wants some love!`, body: `${n} ${n > 1 ? 'animals' : 'animal'} ready to pet${item ? ` · ${item}` : ''}` }
+        : { title: `${group.name} quer carinho!`, body: `${n} ${n > 1 ? 'animais prontos' : 'animal pronto'} para carinho${item ? ` · ${item}` : ''}` };
+    }
+    case 'floatingIsland': {
+      const end = group.meta?.endAt ? time(group.meta.endAt) : '';
+      return en ? { title: 'Floating Island is live!', body: end ? `Ends at ${end}` : 'Open now' } : { title: 'Floating Island aberta!', body: end ? `Fecha às ${end}` : 'Aberta agora' };
+    }
+    case 'sales': {
+      const got = group.meta?.flower ? fmt(group.meta.flower, lang) : null;
+      return en
+        ? { title: `Sold ${qty} ${group.name}!`, body: got ? `You received ${got} FLOWER` : 'Listing sold on the marketplace' }
+        : { title: `Vendeu ${qty} ${group.name}!`, body: got ? `Você recebeu ${got} FLOWER` : 'Anúncio vendido no mercado' };
+    }
+    default: {
+      const nodes = n > 1 ? `${n} ${en ? 'spots' : 'pontos'} · ` : '';
+      return en
+        ? { title: `${qty} ${group.name} ready!`, body: `${nodes}Ready to collect · ${label}` }
+        : { title: `${qty} ${group.name} ${(group.amount ?? n) > 1 ? 'prontos' : 'pronto'}!`, body: `${nodes}Pronto para coletar · ${label}` };
+    }
   }
-  if (group.category === 'daily') return { title: 'Baú diário liberado!', body: 'Abra antes de virar o dia.' };
-  if (group.category === 'animals') return { title: `${group.name} acordou!`, body: `${n} ${n > 1 ? 'animais prontos' : 'animal pronto'} · ${label}` };
-  return { title: `${group.name} pronto!`, body: `${n} ${n > 1 ? 'prontos' : 'pronto'} para coletar · ${label}` };
 }
 
 /** Uma notificação por item: um aviso novo de "Wood" substitui o anterior em vez de empilhar. */
-export const displayTag = g => `${g.category}:${g.name}`;
+export const displayTag = g => (g.category === 'sales' ? `sales:${g.keys?.[0] ?? g.key}` : `${g.category}:${g.name}`);

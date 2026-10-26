@@ -14,7 +14,8 @@ const isPushEndpoint = (url: unknown) => {
 // Mantém só o formato esperado das preferências, para nada estranho ir parar no banco.
 function cleanPrefs(prefs: any) {
   const bools = (o: any) => Object.fromEntries(Object.entries(o ?? {}).filter(([k, v]) => typeof v === 'boolean' && k.length < 80).slice(0, 400));
-  return { enabled: prefs?.enabled !== false, lang: prefs?.lang === 'en' ? 'en' : 'pt', categories: bools(prefs?.categories), items: bools(prefs?.items) };
+  const tz = typeof prefs?.tz === 'string' && /^[A-Za-z_]+(\/[A-Za-z0-9_+-]+){0,2}$/.test(prefs.tz) ? prefs.tz : undefined;
+  return { enabled: prefs?.enabled !== false, lang: prefs?.lang === 'en' ? 'en' : 'pt', tz, categories: bools(prefs?.categories), items: bools(prefs?.items) };
 }
 
 async function findDevice(endpoint: unknown) {
@@ -42,7 +43,7 @@ Deno.serve(async req => {
         const farm = await fetchFarm(farmId);
         const now = new Date().toISOString();
         const { error: farmErr } = await db.from('sflpro_farms').upsert({
-          farm_id: farmId, next_fetch_at: new Date(Date.now() + 5 * 60_000).toISOString(),
+          farm_id: farmId, next_fetch_at: new Date(Date.now() + 2 * 60_000).toISOString(),
           last_fetch_at: now, last_error: null, fail_count: 0, updated_at: now,
         });
         if (farmErr) throw farmErr;
