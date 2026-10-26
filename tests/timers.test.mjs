@@ -98,3 +98,12 @@ test('Floating Island avisa na abertura com a hora de fechar', () => {
   assert.equal(text.title, 'Floating Island is live!');
   assert.match(text.body, /04:10 PM/);
 });
+
+test('cada venda vira um aviso, mesmo no mesmo minuto, com preço bruto e líquido', () => {
+  const listing = (at) => ({ items: { Barley: 33 }, sfl: 0.82, tax: 0.0615, createdAt: 1, fulfilledAt: at });
+  const groups = groupTimers(extractTimers({ trades: { listings: { a: listing(5000), b: listing(20000) } } }));
+  assert.equal(groups.length, 2);
+  const text = notificationText(groups[0], 'pt');
+  assert.equal(text.title, 'Vendeu 33 Barley por 0,82 FLOWER!');
+  assert.match(text.body, /0,7585 FLOWER já sem a taxa/);
+});

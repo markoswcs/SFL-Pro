@@ -30,10 +30,15 @@ self.addEventListener('message', event => {
 // Aqui ela é ampliada sem suavizar, sobre um quadro arredondado no tema do app.
 async function pixelIcon(src) {
   if (!src || typeof OffscreenCanvas === 'undefined') return src;
+  // Com o celular acordando a rede pode demorar: depois de 3 s mostra o aviso com o ícone original.
+  return Promise.race([drawPixelIcon(src), new Promise(resolve => setTimeout(() => resolve(src), 3000))]);
+}
+
+async function drawPixelIcon(src) {
   try {
     const url = new URL(src, self.location.origin);
     const fetchUrl = url.hostname === 'sfl.world' ? `/api/sfl?url=${encodeURIComponent(url.href)}` : url.href;
-    const res = await fetch(fetchUrl, { mode: 'cors' });
+    const res = await fetch(fetchUrl, { mode: 'cors', signal: AbortSignal.timeout(3000) });
     if (!res.ok) return src;
     const bitmap = await createImageBitmap(await res.blob());
     const size = 192;
@@ -70,16 +75,23 @@ self.addEventListener('push', event => {
   let data = {};
   try { data = event.data?.json() ?? {}; } catch { data = { title: 'SFL Pro', body: event.data?.text() }; }
   const title = data.title ?? 'SFL Pro';
-  event.waitUntil((async () => self.registration.showNotification(title, {
+  const options = {
     body: data.body ?? '',
-    icon: data.icon ? await pixelIcon(data.icon) : '/icons/icon-192.png',
     badge: '/icons/badge-96.png',
     image: data.image,
     tag: data.tag ?? 'sfl',
     renotify: true,
     timestamp: data.timestamp ?? Date.now(),
     data: { url: data.url ?? '/?tab=farm' },
-  }))());
+  };
+  event.waitUntil((async () => {
+    try {
+      await self.registration.showNotification(title, { ...options, icon: data.icon ? await pixelIcon(data.icon) : '/icons/icon-192.png' });
+    } catch {
+      // Ícone ou imagem problemáticos não podem fazer o aviso sumir.
+      await self.registration.showNotification(title, { ...options, image: undefined, icon: '/icons/icon-192.png' });
+    }
+  })());
 });
 
 self.addEventListener('notificationclick', event => {

@@ -217,7 +217,7 @@ export function extractTimers(farm, now = Date.now()) {
     if (!l?.fulfilledAt) continue;
     const [item, qty] = Object.entries(l.items ?? {})[0] ?? ['Flower', 1];
     const received = Math.max(0, Number(l.sfl ?? 0) - Number(l.tax ?? 0));
-    push('sales', item, l.fulfilledAt, id, item, l.createdAt, Number(qty) || 1, { flower: Math.round(received * 1e6) / 1e6 });
+    push('sales', item, l.fulfilledAt, id, item, l.createdAt, Number(qty) || 1, { flower: Math.round(received * 1e6) / 1e6, gross: Number(l.sfl ?? 0) });
   }
 
   // Ofertas de compra que alguém aceitou: quem compra paga o valor da oferta, sem taxa.
@@ -230,8 +230,8 @@ export function extractTimers(farm, now = Date.now()) {
   return out.sort((a, b) => a.readyAt - b.readyAt);
 }
 
-/** Cada janela da ilha flutuante tem a própria hora de fechar, então não soma com outra. */
-const SOLO = new Set(['floatingIsland']);
+/** Não somam com outros: cada janela da ilha tem a própria hora de fechar e cada venda/oferta vira um aviso. */
+const SOLO = new Set(['floatingIsland', 'sales', 'offers']);
 
 /** Agrupa timers da mesma categoria/item que ficam prontos com até 60s de diferença. */
 export function groupTimers(timers, windowMs = 60_000) {
@@ -252,6 +252,7 @@ export function mergeInto(g, t) {
   g.readyAt = Math.max(g.readyAt, t.readyAt);
   g.firstAt = Math.min(g.firstAt ?? g.readyAt, t.firstAt ?? t.readyAt);
   if (t.meta?.flower) g.meta = { ...g.meta, flower: Math.round(((g.meta?.flower ?? 0) + t.meta.flower) * 1e6) / 1e6 };
+  if (t.meta?.gross) g.meta = { ...g.meta, gross: Math.round(((g.meta?.gross ?? 0) + t.meta.gross) * 1e6) / 1e6 };
   return g;
 }
 
@@ -304,10 +305,12 @@ export function notificationText(group, lang = 'pt', tz = 'America/Sao_Paulo') {
         : { title: `Oferta aceita: ${qty} ${group.name}!`, body: paid ? `Você comprou por ${paid} FLOWER · colete no jogo` : 'Colete no jogo' };
     }
     case 'sales': {
+      // Como no jogo: o preço do anúncio no título e o que entra depois da taxa no texto.
       const got = group.meta?.flower ? fmt(group.meta.flower, lang) : null;
+      const gross = group.meta?.gross ? fmt(group.meta.gross, lang) : null;
       return en
-        ? { title: `Sold ${qty} ${group.name}!`, body: got ? `You received ${got} FLOWER` : 'Listing sold on the marketplace' }
-        : { title: `Vendeu ${qty} ${group.name}!`, body: got ? `Você recebeu ${got} FLOWER` : 'Anúncio vendido no mercado' };
+        ? { title: `Sold ${qty} ${group.name}${gross ? ` for ${gross} FLOWER` : ''}!`, body: got ? `You receive ${got} FLOWER after the fee · claim it in game` : 'Listing sold on the marketplace' }
+        : { title: `Vendeu ${qty} ${group.name}${gross ? ` por ${gross} FLOWER` : ''}!`, body: got ? `Você recebe ${got} FLOWER já sem a taxa · colete no jogo` : 'Anúncio vendido no mercado' };
     }
     default: {
       const nodes = n > 1 ? `${n} ${en ? 'spots' : 'pontos'} · ` : '';

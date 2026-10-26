@@ -114,6 +114,10 @@ async function dispatch() {
     if (!toSend.length) continue;
 
     const { data: devices } = await db.from('sflpro_devices').select('*').eq('farm_id', farmId);
+    // Aviso que nenhum aparelho conseguiu receber é desmarcado para a próxima rodada tentar de novo.
+    const attempted = new Set<string>();
+    const delivered = new Set<string>();
+    const track = (groups: typeof toSend, ok: boolean) => groups.forEach(g => { attempted.add(tagOf(g)); if (ok) delivered.add(tagOf(g)); });
     for (const device of (devices ?? []) as Device[]) {
       const lang = device.prefs?.lang === 'en' ? 'en' : 'pt';
       const tz = typeof device.prefs?.tz === 'string' ? device.prefs.tz : undefined;
@@ -122,11 +126,13 @@ async function dispatch() {
       const rest = wanted.filter(g => !NEVER_SUMMARIZE.has(g.category));
       if (rest.length > SUMMARY_AFTER) {
         const names = [...new Set(rest.map(g => g.name))];
-        await sendPush(device, {
+        const ok = await sendPush(device, {
           title: lang === 'en' ? `${rest.length} things ready on your farm` : `${rest.length} coisas prontas na fazenda`,
           body: names.slice(0, 5).join(', ') + (names.length > 5 ? (lang === 'en' ? ` and ${names.length - 5} more` : ` e mais ${names.length - 5}`) : ''),
           icon: itemImage(rest[0].image), tag: `sum:${Math.round(now / 60_000)}`, url: '/?tab=farm', timestamp: now,
-        }) && sent++;
+        });
+        track(rest, ok);
+        if (ok) sent++;
       } else {
         solo.push(...rest);
       }
@@ -134,9 +140,13 @@ async function dispatch() {
         const { title, body } = notificationText(g, lang, tz);
         // O ícone é a arte do próprio item (pedra, trigo, vaca…); o aparelho baixa a imagem ao exibir.
         const url = g.category === 'sales' ? '/?tab=market&view=sales' : g.category === 'offers' ? '/?tab=market&view=buys' : '/?tab=farm';
-        await sendPush(device, { title, body, icon: itemImage(g.image), tag: displayTag(g), url, timestamp: g.readyAt }) && sent++;
+        const ok = await sendPush(device, { title, body, icon: itemImage(g.image), tag: displayTag(g), url, timestamp: g.readyAt });
+        track([g], ok);
+        if (ok) sent++;
       }
     }
+    const retry = [...attempted].filter(tag => !delivered.has(tag));
+    if (retry.length) await db.from('sflpro_sent').delete().eq('farm_id', farmId).in('tag', retry);
   }
   return sent;
 }

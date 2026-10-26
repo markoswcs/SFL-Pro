@@ -97,7 +97,9 @@ export async function sendPush(device: Device, payload: Record<string, unknown>)
     await webpush.sendNotification(
       { endpoint: device.endpoint, keys: { p256dh: device.p256dh, auth: device.auth } },
       JSON.stringify(payload),
-      { TTL: 60 * 60, urgency: 'high', topic: String(payload.tag ?? 'sfl').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32) },
+      // Sem Topic: no FCM, mensagens com Topic viram "recolhíveis" e, com o celular dormindo,
+      // só 4 delas ficam na fila; o resto era descartado. A troca de aviso repetido já é feita pela tag.
+      { TTL: 60 * 60, urgency: 'high' },
     );
     await db.from('sflpro_devices').update({ last_push_at: new Date().toISOString() }).eq('id', device.id);
     return true;
