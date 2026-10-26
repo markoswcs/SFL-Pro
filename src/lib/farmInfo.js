@@ -81,5 +81,5 @@ export const farmLink = farmId => `https://sunflower-land.com/play/#/visit/${far
 
 export const SUPPORT = {
   farmId: '2601876753363557',
-  wallet: '0xc50D1bB0EF7F6F4E5BBeB06bde2aA4C5Df0C6219',
+  wallet: '0x3deb0a5ba06cc845db088b957d8e28492c9258aa',
 };

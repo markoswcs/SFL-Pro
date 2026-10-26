@@ -360,8 +360,6 @@ button.balance.main:hover, button.next:hover, button.info-card:hover { border-co
 .support-btn svg { width: 18px; height: 18px; }
 .wallet-box { display: grid; gap: 10px; padding: 14px; border-radius: 16px; background: var(--card); border: 1px solid var(--line-2); }
 .wallet-addr { font: 600 13px/1.4 ui-monospace, monospace; word-break: break-all; color: var(--text); background: var(--bg); padding: 10px 12px; border-radius: 10px; border: 1px dashed var(--line-2); }
-.net-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 99px; background: rgba(0, 82, 255, .16); color: #7ea6ff; font-weight: 800; font-size: 12px; border: 1px solid rgba(0, 82, 255, .4); width: fit-content; }
-.net-badge i { width: 10px; height: 10px; border-radius: 50%; background: #0052ff; }
 .lang-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .lang-pick button { display: grid; justify-items: center; gap: 6px; padding: 18px 12px; border-radius: 18px; background: var(--card); border: 2px solid var(--line-2); font-weight: 800; transition: border-color .2s, transform .2s var(--ease); }
 .lang-pick button:hover { border-color: var(--sun); transform: translateY(-2px); }

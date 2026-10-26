@@ -99,12 +99,10 @@ function SupportSheet({ onClose }) {
       <p className="hint" style={{ textAlign: 'center', marginTop: 6 }}>Farm ID #{SUPPORT.farmId}</p>
       <h3 className="sheet-sub">{t('support.wallet')}</h3>
       <div className="wallet-box">
-        <span className="net-badge"><i /> {t('support.network')}</span>
         <div className="wallet-addr">{SUPPORT.wallet}</div>
         <button className="btn btn-ghost" onClick={async () => { if (await copyText(SUPPORT.wallet)) toast(t('farm.copied')); }}>
           <Icon name="copy" width="18" height="18" /> {t('support.copy')}
         </button>
-        <p className="hint" style={{ color: '#ffb4a3' }}>⚠️ {t('support.warn')}</p>
       </div>
       <p style={{ textAlign: 'center', marginTop: 16, fontWeight: 700 }}>{t('support.thanks')}</p>
     </Sheet>
