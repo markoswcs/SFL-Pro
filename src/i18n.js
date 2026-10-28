@@ -119,7 +119,7 @@ const pt = {
   'buys.serverOff': 'Não deu para carregar as ofertas aceitas guardadas pelo servidor agora.',
   'buys.paidAt': 'Pagou {total} ({unit}/un.) em {when}', 'buys.src.offer': 'oferta aceita', 'buys.src.manual': 'registrada por você', 'buys.noPrice': 'sem preço no P2P',
   'buys.sellNow': 'Se vender agora você recebe', 'buys.breakEven': 'Para não perder, anuncie a', 'buys.target': 'Para lucrar {n}%, anuncie a', 'buys.perUnit': '/un.', 'buys.totalListing': 'anúncio de {total} FLOWER {cur}',
-  'buys.remove': 'Remover', 'buys.hint': 'O preço de anúncio já inclui a taxa de {n}% em recursos (10% nos demais itens). O jogo não guarda o preço das compras instantâneas: registre-as aqui. As ofertas aceitas são copiadas pelo servidor quando as notificações estão ativas.',
+  'buys.remove': 'Remover', 'buys.hint': 'O preço de anúncio já inclui a taxa de {n}% em recursos (10% nos demais itens). Com as notificações ativas, o servidor registra sozinho as ofertas aceitas e as compras instantâneas (pelo FLOWER que saiu e pelo item que entrou). Compras de antes disso, registre aqui.',
   'price.kind.res': 'Recursos · {n}', 'price.kind.nft': 'NFTs · {n}', 'price.sort.boost': 'Com boost', 'price.sort.mine': 'Meus',
   'tax.short': 'sua taxa: {n}% em recursos, 10% em NFTs',
   'movers.up': 'Maior alta', 'movers.down': 'Maior queda', 'movers.sell': 'Bom vender', 'movers.flip': 'Revenda', 'movers.aboveAvg': 'acima da média', 'movers.margin': 'de margem',
@@ -152,6 +152,9 @@ const pt = {
   'tour.done.title': 'Tudo pronto!', 'tour.done.text': 'Você pode rever este tour quando quiser em Ajustes → Tutorial.',
   'ready.title': '{n} prontos para coletar', 'ready.hint': 'toque para ver',
   'alerts.group.farming': 'Lavoura', 'alerts.group.resources': 'Recursos', 'alerts.group.animals': 'Animais e abelhas', 'alerts.group.production': 'Produção', 'alerts.group.events': 'Mercado e eventos',
+  'inv.change': 'Variação {p}', 'inv.noHistory': 'sem histórico ainda', 'inv.sort.value': 'Mais valiosos', 'inv.sort.up': 'Subiram', 'inv.sort.down': 'Caíram',
+  'buys.src.auto': 'detectada automaticamente',
+  'detect.title': 'Você gastou {spent} FLOWER no mercado', 'detect.text': 'Em {when}. O que você comprou?', 'detect.notBuy': 'Não foi uma compra',
 };
 
 const en = {
@@ -273,7 +276,7 @@ const en = {
   'buys.serverOff': 'Could not load the accepted offers saved by the server right now.',
   'buys.paidAt': 'Paid {total} ({unit}/unit) on {when}', 'buys.src.offer': 'accepted offer', 'buys.src.manual': 'added by you', 'buys.noPrice': 'no P2P price',
   'buys.sellNow': 'If you sell now you receive', 'buys.breakEven': 'To break even, list at', 'buys.target': 'For {n}% profit, list at', 'buys.perUnit': '/unit', 'buys.totalListing': 'listing of {total} FLOWER {cur}',
-  'buys.remove': 'Remove', 'buys.hint': 'Listing prices already include the {n}% fee on resources (10% on other items). The game does not keep the price of instant purchases: add them here. Accepted offers are copied by the server while notifications are on.',
+  'buys.remove': 'Remove', 'buys.hint': 'Listing prices already include the {n}% fee on resources (10% on other items). While notifications are on, the server records accepted offers and instant purchases on its own (from the FLOWER spent and the item received). Add older purchases here.',
   'price.kind.res': 'Resources · {n}', 'price.kind.nft': 'NFTs · {n}', 'price.sort.boost': 'With boost', 'price.sort.mine': 'Mine',
   'tax.short': 'your fee: {n}% on resources, 10% on NFTs',
   'movers.up': 'Top gainer', 'movers.down': 'Top loser', 'movers.sell': 'Good to sell', 'movers.flip': 'Flip', 'movers.aboveAvg': 'above average', 'movers.margin': 'margin',
@@ -306,6 +309,9 @@ const en = {
   'tour.done.title': 'All set!', 'tour.done.text': 'You can replay this tour anytime in Settings → Tutorial.',
   'ready.title': '{n} ready to collect', 'ready.hint': 'tap to see',
   'alerts.group.farming': 'Farming', 'alerts.group.resources': 'Resources', 'alerts.group.animals': 'Animals and bees', 'alerts.group.production': 'Production', 'alerts.group.events': 'Market and events',
+  'inv.change': 'Change {p}', 'inv.noHistory': 'no history yet', 'inv.sort.value': 'Most valuable', 'inv.sort.up': 'Went up', 'inv.sort.down': 'Went down',
+  'buys.src.auto': 'detected automatically',
+  'detect.title': 'You spent {spent} FLOWER on the market', 'detect.text': 'On {when}. What did you buy?', 'detect.notBuy': 'It wasn’t a purchase',
 };
 
 const DICTS = { pt, en };

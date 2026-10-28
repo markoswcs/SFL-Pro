@@ -2,6 +2,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.49.4';
 import webpush from 'npm:web-push@3.6.7';
 import { extractTimers } from './farm-timers.js';
+import { detectPurchase, farmState } from './purchases.js';
 import { itemImage } from './item-image.js';
 
 export const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
@@ -60,7 +61,27 @@ export async function storeTimers(farmId: number, farm: unknown) {
     if (error) throw error;
   }
   await recordPurchases(farmId, farm).catch(e => console.error('compras falharam', (e as Error).message));
+  await detectFarmPurchase(farmId, farm).catch(e => console.error('detecção de compra falhou', (e as Error).message));
   return rows.length;
+}
+
+/**
+ * Compra instantânea no mercado não deixa preço na fazenda: compara esta leitura com a anterior
+ * (saldo que saiu × itens que entraram) e guarda o que achou em sflpro_purchases.
+ */
+async function detectFarmPurchase(farmId: number, farm: unknown) {
+  const cur = farmState(farm);
+  const { data: row, error } = await db.from('sflpro_farms').select('last_state').eq('farm_id', farmId).maybeSingle();
+  if (error) return; // migração 20261028000000 ainda não aplicada
+  await db.from('sflpro_farms').update({ last_state: cur }).eq('farm_id', farmId);
+  if (!row?.last_state) return;
+  const { data: price } = await db.from('sflpro_prices').select('p2p').order('at', { ascending: false }).limit(1).maybeSingle();
+  const found = detectPurchase(row.last_state, cur, price?.p2p ?? {});
+  if (!found) return;
+  await db.from('sflpro_purchases').upsert({
+    farm_id: farmId, offer_id: `auto-${found.at}`, item: found.item, qty: found.qty, sfl: found.spent,
+    bought_at: new Date(found.at).toISOString(), pending: found.pending, candidates: found.candidates,
+  }, { onConflict: 'farm_id,offer_id', ignoreDuplicates: true });
 }
 
 /** Copia as ofertas de compra aceitas: depois que o jogador coleta, o jogo apaga o preço. */

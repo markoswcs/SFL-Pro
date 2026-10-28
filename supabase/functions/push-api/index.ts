@@ -153,8 +153,11 @@ Deno.serve(async req => {
       case 'purchases': {
         const farmId = Number(String(body.farmId ?? '').replace(/\D/g, ''));
         if (!farmId) return json({ error: 'Informe o Farm ID.' }, 400);
-        const { data, error } = await db.from('sflpro_purchases').select('offer_id, item, qty, sfl, bought_at')
-          .eq('farm_id', farmId).order('bought_at', { ascending: false }).limit(200);
+        const query = (cols: string) => db.from('sflpro_purchases').select(cols).eq('farm_id', farmId).order('bought_at', { ascending: false }).limit(200);
+        type Rows = { data: Record<string, unknown>[] | null; error: unknown };
+        let { data, error } = (await query('offer_id, item, qty, sfl, bought_at, pending, candidates')) as Rows;
+        // Sem as colunas da detecção automática ainda: devolve só as ofertas aceitas.
+        if (error) ({ data, error } = (await query('offer_id, item, qty, sfl, bought_at')) as Rows);
         if (error) return json({ error: 'Compras indisponíveis.' }, 503);
         return json({ ok: true, purchases: data ?? [] });
       }

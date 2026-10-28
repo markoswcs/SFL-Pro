@@ -573,3 +573,11 @@ button.card, .ready-chip { transition: transform .15s var(--ease), border-color 
 
 a.pref { color: inherit; }
 a.pref:hover .title { color: var(--sun); }
+
+.detected { padding: 14px; margin-bottom: 10px; border-color: rgba(110, 200, 255, .35); background: linear-gradient(135deg, rgba(110, 200, 255, .1), transparent 60%), var(--card); }
+.detected svg { color: var(--sky); flex: none; }
+.detected .title { font-weight: 800; }
+.detected .sub { font-size: 13px; color: var(--text-2); }
+.detected-options { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.detected-options .ready-chip { max-width: none; border-color: rgba(110, 200, 255, .3); }
+.detected-options .ready-chip b { color: var(--sky); }

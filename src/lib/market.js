@@ -1,6 +1,9 @@
 // Contas do mercado P2P: taxa de venda, variação de preço e sinais de compra/venda.
 // Regras da taxa vêm do código do jogo (types/marketplace.ts e actions/tradeLimits.ts).
+import { TRADE_MINIMUMS } from '../../supabase/functions/_shared/purchases.js';
 import { vipInfo } from './farmInfo.js';
+
+export { TRADE_MINIMUMS };
 
 // Venda de NFTs (colecionáveis, roupas…) paga 10%.
 export const MARKETPLACE_TAX = 0.1;
@@ -9,8 +12,6 @@ export const MARKETPLACE_TAX = 0.1;
 const ISLAND_RESOURCE_TAX = { basic: 1, spring: 0.55, desert: 0.25, volcano: 0.15, swamp: 0.15, spooky: 0.15, crystal: 0.15, galaxy: 0.15, marble: 0.15 };
 const SHRINE_MS = 30 * 86400_000;
 
-/** Quantidade mínima por anúncio de cada recurso (TRADE_MINIMUMS). Também é a lista do que conta como recurso. */
-export const TRADE_MINIMUMS = {"Sunflower":200,"Potato":200,"Rhubarb":200,"Pumpkin":100,"Zucchini":100,"Carrot":100,"Yam":100,"Cabbage":100,"Broccoli":100,"Soybean":50,"Beetroot":50,"Pepper":50,"Cauliflower":50,"Parsnip":20,"Eggplant":20,"Corn":20,"Onion":20,"Radish":10,"Wheat":10,"Turnip":10,"Kale":10,"Artichoke":10,"Barley":10,"Saltwort":10,"Crystal Leaf":10,"Tomato":20,"Lemon":10,"Blueberry":10,"Orange":10,"Apple":5,"Banana":5,"Celestine":3,"Lunara":2,"Duskberry":1,"Grape":5,"Rice":5,"Olive":5,"Wood":50,"Stone":10,"Iron":5,"Gold":3,"Crimstone":1,"Salt":10,"Honey":5,"Feather":20,"Egg":10,"Milk":5,"Leather":5,"Wool":10,"Merino Wool":5,"Ruffroot":1,"Chewed Bone":1,"Heart leaf":1,"Frost Pebble":1,"Wild Grass":1,"Ribbon":1,"Dewberry":1,"Moonfur":1,"Capsule Bait":1,"Umbrella Bait":1,"Crimson Baitfish":1,"Green Beetle":5,"Blue Beetle":5,"Pink Beetle":5,"Amber Beetle":5,"Pig Bristles":5,"Truffle":5};
 
 export const isResource = name => name in TRADE_MINIMUMS;
 
@@ -29,6 +30,9 @@ export function resourceTax(farm, land, now = Date.now()) {
 
 /** Taxa que incide na venda deste item. */
 export const taxFor = (name, tax) => (isResource(name) ? tax.rate : MARKETPLACE_TAX);
+
+/** Rótulo da comparação "semanal" enquanto o histórico ainda não tem 7 dias ("2d", "5d"…). */
+const periodLabel = ms => (ms >= 6.5 * 86400_000 ? '7d' : `${Math.max(1, Math.round(ms / 86400_000))}d`);
 
 /** Valor no ponto mais próximo de `at` sem passar dele (ou o mais antigo, se o histórico for curto). */
 function valueAt(t, values, at) {
@@ -65,6 +69,7 @@ export function itemStats(history, name, current, now = Date.now()) {
     current: cur, points, span,
     change24: change(ref24), change7: ref7 && ref24 && ref7.at === ref24.at ? null : change(ref7),
     label24: hours >= 20 ? '24h' : `${hours}h`,
+    label7: ref7 ? periodLabel(now - ref7.at) : '7d',
     ref24At: ref24?.at, ref7At: ref7?.at,
     avg7, min7: Math.min(...week), max7: Math.max(...week),
   };
@@ -111,6 +116,7 @@ export function nftStats(summary, current, now = Date.now()) {
     change24: change(p24),
     label24: now - first >= 20 * 3600_000 ? '24h' : `${Math.max(1, Math.round((now - first) / 3600_000))}h`,
     change7: now - first >= 36 * 3600_000 ? change(p7) : null,
+    label7: periodLabel(now - first),
     avg7, min7: Math.min(min7, current || min7), max7: Math.max(max7, current || 0),
   };
 }

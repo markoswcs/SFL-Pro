@@ -5,50 +5,10 @@ import { useResource } from '../lib/hooks.js';
 import { setSettings } from '../lib/store.js';
 import { locale, useT } from '../i18n.js';
 import { Empty, ItemImg, Notice } from '../ui.jsx';
-import { Buys, NftHoldings, Prices } from './MarketPrices.jsx';
+import { Buys, Inventory, Prices } from './MarketPrices.jsx';
 
 const TABS = ['prices', 'buys', 'inventory', 'sales', 'news'];
 
-function Inventory({ farm, prices, rate, currency }) {
-  const t = useT();
-  const rows = useMemo(() => {
-    const p2p = prices?.p2p ?? {};
-    return Object.entries(farm?.inventory ?? {})
-      .map(([name, qty]) => ({ name, qty: Number(qty), unit: Number(p2p[name] ?? 0) }))
-      .filter(r => r.qty > 0 && r.unit > 0)
-      .map(r => ({ ...r, total: r.qty * r.unit }))
-      .sort((a, b) => b.total - a.total);
-  }, [farm, prices]);
-  const total = rows.reduce((s, r) => s + r.total, 0);
-
-  if (!farm) return <Notice>{t('market.needFarm')}</Notice>;
-  return (
-    <>
-      <div className="stat-grid">
-        <div className="card stat"><small>{t('market.sellable')}</small><strong className="sun">{flower(total)}</strong></div>
-        <div className="card stat"><small>{t('market.in', { cur: currency.toUpperCase() })}</small><strong>{rate ? money(total * rate, currency) : '—'}</strong></div>
-        <div className="card stat"><small>{t('market.priced')}</small><strong>{rows.length}</strong></div>
-      </div>
-      <p className="hint" style={{ margin: '10px 2px 14px' }}>{t('market.estimate')}</p>
-      <div className="list">
-        {rows.map(r => (
-          <div className="list-row" key={r.name}>
-            <div className="thumb"><ItemImg name={r.name} size={28} /></div>
-            <div className="grow">
-              <div className="title ellipsis">{r.name}</div>
-              <div className="sub">{num(r.qty)} × {flower(r.unit)}</div>
-            </div>
-            <div className="val">
-              <strong>{flower(r.total)}</strong>
-              <small>{rate ? money(r.total * rate, currency) : ''}</small>
-            </div>
-          </div>
-        ))}
-      </div>
-      <NftHoldings farm={farm} rate={rate} currency={currency} />
-    </>
-  );
-}
 
 function Sales({ farm, rate, currency, lang }) {
   const t = useT();

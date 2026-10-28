@@ -123,7 +123,7 @@ function ItemSheet({ row, history, farm, owned, rate, currency, onBuy, onClose }
       <div className="stat-grid">
         <div className="card stat"><small>{nft ? t('nft.floor') : t('price.now')}</small><strong className="sun">{flower(stats.current)}</strong>{rate > 0 && <small>{money(stats.current * rate, currency)}</small>}</div>
         <div className="card stat"><small>{stats.label24 ?? '24h'}</small><strong className={tone(stats.change24)}>{pct(stats.change24)}</strong></div>
-        <div className="card stat"><small>7 {t('price.days')}</small><strong className={tone(stats.change7)}>{pct(stats.change7)}</strong></div>
+        <div className="card stat"><small>{stats.label7 ?? '7d'}</small><strong className={tone(stats.change7)}>{pct(stats.change7)}</strong></div>
       </div>
       {points.length > 1 ? (
         <div className="card spark-card">
@@ -279,7 +279,7 @@ export function Prices({ prices, rate, currency, favorites, farm, land, onBuy })
                 <div className="grow" style={{ minWidth: 0 }}>
                   <div className="title ellipsis">{r.name}{r.nft && owned.has(r.nft.key) && <span className="own-dot" title={t('nft.owned')}> ●</span>}</div>
                   <div className="sub row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                    <Delta v={r.stats.change24} label={r.stats.label24} /><Delta v={r.stats.change7} label="7d" />
+                    <Delta v={r.stats.change24} label={r.stats.label24} /><Delta v={r.stats.change7} label={r.stats.label7} />
                     {r.stats.change24 == null && r.stats.change7 == null && <span className="ellipsis">{r.nft?.boost ? `⚡ ${r.nft.boost}` : r.nft ? t(`nft.kind.${r.nft.kind}`) : t('market.perUnit')}</span>}
                     {r.sig.sell != null && <span className="pill sig-sell">{t('price.sell')}</span>}
                     {r.sig.flip != null && <span className="pill sig-flip">{t('price.flip', { n: pct(r.sig.flip) })}</span>}
@@ -305,6 +305,37 @@ export function Prices({ prices, rate, currency, favorites, farm, land, onBuy })
 }
 
 // ---------------------------------------------------------------- carteira
+
+/** Compra que o servidor percebeu mas não soube qual item foi: a pessoa escolhe com um toque. */
+function DetectedPurchase({ tx, priceOf }) {
+  const t = useT();
+  const { lang } = useSettings();
+  const pick = c => setSettings(s => ({ txEdits: { ...s.txEdits, [tx.id]: { item: c.item, qty: c.qty, pending: false } } }));
+  const dismiss = () => setSettings(s => ({ txHidden: { ...s.txHidden, [tx.id]: true } }));
+  return (
+    <div className="card detected">
+      <div className="row">
+        <Icon name="info" width="22" height="22" />
+        <div className="grow">
+          <div className="title">{t('detect.title', { spent: flower(tx.sfl) })}</div>
+          <div className="sub">{t('detect.text', { when: new Date(tx.at).toLocaleString(locale(lang), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) })}</div>
+        </div>
+      </div>
+      <div className="detected-options">
+        {tx.candidates.map(c => {
+          const value = priceOf(c.item).price * c.qty;
+          return (
+            <button key={c.item} className="ready-chip" onClick={() => pick(c)}>
+              <Thumb item={c.item} size={22} /><b>+{num(c.qty)}</b><span className="ellipsis">{c.item}</span>
+              {value > 0 && <small className="muted">≈ {flower(value)}</small>}
+            </button>
+          );
+        })}
+      </div>
+      <button className="link-btn" style={{ color: 'var(--muted)', marginTop: 8 }} onClick={dismiss}>{t('detect.notBuy')}</button>
+    </div>
+  );
+}
 
 const toLocalInput = ms => { const d = new Date(ms); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
 
@@ -446,7 +477,11 @@ export function Buys({ farm, land, prices, settings, rate, currency, exchange, a
   const txs = useMemo(() => {
     const byId = new Map();
     const add = (id, tx) => { if (!settings.txHidden?.[id]) byId.set(id, { ...tx, ...(settings.txEdits?.[id] ?? {}), id }); };
-    for (const p of server ?? []) add(p.offer_id, { item: p.item, qty: Number(p.qty), sfl: Number(p.sfl), at: Date.parse(p.bought_at), source: 'offer' });
+    for (const p of server ?? []) {
+      // "auto-…": compra instantânea deduzida pelo servidor (saldo que saiu × itens que entraram).
+      const auto = String(p.offer_id).startsWith('auto-');
+      add(p.offer_id, { item: p.item, qty: Number(p.qty), sfl: Number(p.sfl), at: Date.parse(p.bought_at), source: auto ? 'auto' : 'offer', pending: !!p.pending, candidates: p.candidates ?? [] });
+    }
     for (const [id, o] of Object.entries(farm?.trades?.offers ?? {})) {
       if (!o?.fulfilledAt || byId.has(id)) continue;
       const [item, qty] = Object.entries(o.items ?? {})[0] ?? ['?', 0];
@@ -457,11 +492,14 @@ export function Buys({ farm, land, prices, settings, rate, currency, exchange, a
     return [...byId.values()].filter(x => x.qty > 0 && x.sfl > 0).map(x => ({ ...x, usd: x.usd ?? usdAt(history, x.at) }));
   }, [server, farm, settings.purchases, settings.txEdits, settings.txHidden, history]);
 
-  const positions = useMemo(() => buildPositions(txs, settings.positions).map(p => {
+  // Compra detectada sem certeza do item fica fora da carteira até a pessoa escolher.
+  const pending = txs.filter(x => x.pending);
+  const confirmed = useMemo(() => txs.filter(x => !x.pending), [txs]);
+  const positions = useMemo(() => buildPositions(confirmed, settings.positions).map(p => {
     const { price, nft } = priceOf(p.item);
     const taxRate = taxFor(p.item, tax);
     return { ...p, nft, price, taxRate, m: positionMath(p, price, curUsd, taxRate, goal) };
-  }), [txs, settings.positions, priceOf, tax, curUsd, goal]);
+  }), [confirmed, settings.positions, priceOf, tax, curUsd, goal]);
 
   const priced = positions.filter(p => p.price > 0);
   const total = priced.reduce((a, p) => ({
@@ -499,6 +537,7 @@ export function Buys({ farm, land, prices, settings, rate, currency, exchange, a
       </div>
       {adding !== null && <TxForm names={names} history={history} initial={adding} curUsd={curUsd} onSave={save} onCancel={() => onAdding(null)} />}
       {error && <Notice>{t('buys.serverOff')}</Notice>}
+      {pending.map(tx => <DetectedPurchase key={tx.id} tx={tx} priceOf={priceOf} />)}
       {positions.length === 0 && adding === null && <Empty image="Flower" title={t('buys.none')}>{t('buys.noneText')}</Empty>}
       <div className="buy-list">
         {positions.map(p => (
@@ -532,13 +571,15 @@ export function Buys({ farm, land, prices, settings, rate, currency, exchange, a
 
 // ---------------------------------------------------------------- NFTs no inventário
 
-export function NftHoldings({ farm, rate, currency }) {
+function NftHoldings({ farm, rate, currency, history }) {
   const t = useT();
   const { data: nfts, loading } = useNfts();
   const rows = useMemo(() => {
     const owned = ownedNfts(farm, nfts);
-    return nfts.filter(x => owned.has(x.key)).map(x => ({ ...x, qty: owned.get(x.key), total: owned.get(x.key) * x.floor })).sort((a, b) => b.total - a.total);
-  }, [farm, nfts]);
+    return nfts.filter(x => owned.has(x.key))
+      .map(x => ({ ...x, qty: owned.get(x.key), total: owned.get(x.key) * x.floor, stats: nftStats(history?.nft?.[x.key], x.floor) }))
+      .sort((a, b) => b.total - a.total);
+  }, [farm, nfts, history]);
   const total = rows.reduce((s, r) => s + r.total, 0);
   if (loading && !nfts.length) return <div className="skeleton" style={{ height: 120, marginTop: 16 }} />;
   if (!rows.length) return null;
@@ -556,12 +597,93 @@ export function NftHoldings({ farm, rate, currency }) {
             <div className="thumb"><Thumb item={r} /></div>
             <div className="grow" style={{ minWidth: 0 }}>
               <div className="title ellipsis">{r.qty > 1 ? `${num(r.qty)} × ` : ''}{r.name}</div>
-              <div className="sub ellipsis">{r.boost ? `⚡ ${r.boost}` : t(`nft.kind.${r.kind}`)}</div>
+              <div className="sub row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                <Delta v={r.stats.change24} label={r.stats.label24} /><Delta v={r.stats.change7} label={r.stats.label7} />
+                <span className="ellipsis">{r.boost ? `⚡ ${r.boost}` : t(`nft.kind.${r.kind}`)}</span>
+              </div>
             </div>
             <div className="val"><strong>{r.floor > 0 ? flower(r.total) : '—'}</strong><small>{r.floor > 0 && rate ? money(r.total * rate, currency) : t('nft.noFloor')}</small></div>
           </div>
         ))}
       </div>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------- inventário
+
+const INV_SORTS = ['value', 'up', 'down'];
+
+/** Quanto o conjunto valia no ponto de referência, a partir da variação de cada item. */
+function valueThen(rows, key) {
+  let then = 0;
+  let now = 0;
+  for (const r of rows) {
+    const c = r.stats[key];
+    if (c == null || c <= -1) continue;
+    now += r.total;
+    then += r.total / (1 + c);
+  }
+  return now > 0 ? { change: now / then - 1, delta: now - then } : null;
+}
+
+export function Inventory({ farm, prices, rate, currency }) {
+  const t = useT();
+  const [sort, setSort] = useState('value');
+  const { data: history } = usePriceHistory();
+  const all = useMemo(() => {
+    const p2p = prices?.p2p ?? {};
+    const now = Date.now();
+    return Object.entries(farm?.inventory ?? {})
+      .map(([name, qty]) => ({ name, qty: Number(qty), unit: Number(p2p[name] ?? 0) }))
+      .filter(r => r.qty > 0 && r.unit > 0)
+      .map(r => ({ ...r, total: r.qty * r.unit, stats: itemStats(history, r.name, r.unit, now) }));
+  }, [farm, prices, history]);
+  const rows = useMemo(() => {
+    const by = key => (a, b) => (b.stats[key] ?? -Infinity) - (a.stats[key] ?? -Infinity);
+    if (sort === 'up') return all.filter(r => (r.stats.change24 ?? 0) > 0.0005).sort(by('change24'));
+    if (sort === 'down') return all.filter(r => (r.stats.change24 ?? 0) < -0.0005).sort((a, b) => -by('change24')(a, b));
+    return [...all].sort((a, b) => b.total - a.total);
+  }, [all, sort]);
+  const total = all.reduce((s, r) => s + r.total, 0);
+  const d24 = valueThen(all, 'change24');
+  const d7 = valueThen(all, 'change7');
+  const label24 = all.find(r => r.stats.label24)?.stats.label24 ?? '24h';
+  const label7 = all.find(r => r.stats.change7 != null)?.stats.label7 ?? '7d';
+
+  if (!farm) return <Notice>{t('market.needFarm')}</Notice>;
+  return (
+    <>
+      <div className="stat-grid">
+        <div className="card stat"><small>{t('market.sellable')}</small><strong className="sun">{flower(total)}</strong><small>{rate ? money(total * rate, currency) : ''}</small></div>
+        <div className="card stat"><small>{t('inv.change', { p: label24 })}</small><strong className={tone(d24?.change)}>{pct(d24?.change)}</strong><small>{d24 ? `${signed(d24.delta, flower)} FLOWER` : t('inv.noHistory')}</small></div>
+        <div className="card stat"><small>{t('inv.change', { p: label7 })}</small><strong className={tone(d7?.change)}>{pct(d7?.change)}</strong><small>{d7 ? `${signed(d7.delta, flower)} FLOWER` : t('inv.noHistory')}</small></div>
+      </div>
+      <div className="chip-row" style={{ margin: '12px -16px 6px' }}>
+        {INV_SORTS.map(id => <button key={id} className="chip" aria-pressed={sort === id} onClick={() => setSort(id)}>{t(`inv.sort.${id}`)}</button>)}
+      </div>
+      <p className="hint" style={{ margin: '0 2px 12px' }}>{t('market.estimate')}</p>
+      {rows.length === 0 ? <Empty title={t('market.none')}>{t('price.noSignal')}</Empty> : (
+        <div className="list">
+          {rows.map(r => (
+            <div className="list-row" key={r.name}>
+              <div className="thumb"><ItemImg name={r.name} size={28} /></div>
+              <div className="grow" style={{ minWidth: 0 }}>
+                <div className="title ellipsis">{r.name}</div>
+                <div className="sub row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                  <span>{num(r.qty)} × {flower(r.unit)}</span>
+                  <Delta v={r.stats.change24} label={r.stats.label24} /><Delta v={r.stats.change7} label={r.stats.label7} />
+                </div>
+              </div>
+              <div className="val">
+                <strong>{flower(r.total)}</strong>
+                <small>{rate ? money(r.total * rate, currency) : ''}</small>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <NftHoldings farm={farm} rate={rate} currency={currency} history={history} />
     </>
   );
 }
