@@ -172,6 +172,8 @@ h1, h2, h3, p { margin: 0; }
 .profile::after {
   content: ''; position: absolute; inset: auto -30px -60px auto; width: 200px; height: 200px; border-radius: 50%;
   background: radial-gradient(closest-side, rgba(255, 200, 61, .18), transparent);
+  /* Só enfeite: sem isso o brilho ficava por cima do botão Visitar e engolia o toque. */
+  pointer-events: none;
 }
 .avatar { width: 58px; height: 58px; flex: none; border-radius: 16px; display: grid; place-items: center; background: var(--card-2); border: 1px solid var(--line-2); }
 .avatar img { width: 36px; height: 36px; }

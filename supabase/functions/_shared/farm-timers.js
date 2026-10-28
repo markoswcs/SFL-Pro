@@ -72,7 +72,30 @@ export const CATEGORIES = [
 
 export const CATEGORY_BY_ID = Object.fromEntries(CATEGORIES.map(c => [c.id, c]));
 
-const placed = node => node && node.removedAt === undefined && (node.x !== undefined || node.createdAt !== undefined);
+// No mapa = tem coordenadas. O jogo apaga x/y ao remover, mas um item recolocado mantém o removedAt antigo.
+const placed = node => !!node && (node.x !== undefined || (node.removedAt === undefined && node.createdAt !== undefined));
+
+/**
+ * Quando a colmeia enche (lib/beehiveProduction.ts): o mel cresce (tempo × velocidade) enquanto cada
+ * flor está ligada, a partir de honey.produced em honey.updatedAt. Sem flor ligada até encher, não há hora.
+ */
+export function hiveFullAt(hive) {
+  const updatedAt = hive?.honey?.updatedAt;
+  if (updatedAt == null) return null;
+  let produced = hive.honey.produced ?? 0;
+  if (produced >= BEEHIVE_FULL_MS) return updatedAt;
+  const flowers = (hive.flowers ?? []).filter(f => (f.attachedUntil ?? 0) > updatedAt);
+  const edges = [...new Set([updatedAt, ...flowers.flatMap(f => [f.attachedAt, f.attachedUntil])])].filter(t => t >= updatedAt).sort((a, b) => a - b);
+  for (let i = 0; i < edges.length - 1; i++) {
+    const [from, to] = [edges[i], edges[i + 1]];
+    const rate = flowers.filter(f => f.attachedAt <= from && f.attachedUntil > from).reduce((sum, f) => sum + (f.rate ?? 1), 0);
+    if (!rate) continue;
+    // Tolerância de 1 ms: a flor costuma durar exatamente o tempo de encher a colmeia.
+    if (produced + rate * (to - from) >= BEEHIVE_FULL_MS - 1) return Math.min(to, from + (BEEHIVE_FULL_MS - produced) / rate);
+    produced += rate * (to - from);
+  }
+  return null;
+}
 
 function nodeReadyAt(inner, timeKey, baseMs) {
   const start = inner?.[timeKey];
@@ -164,13 +187,11 @@ export function extractTimers(farm, now = Date.now()) {
   }
 
   for (const [id, hive] of Object.entries(farm.beehives ?? {})) {
-    if (!placed(hive) || !hive.flowers?.length) continue;
-    // Mel acumula pela taxa das flores ligadas; avisamos quando a colmeia enche.
-    const rate = hive.flowers.reduce((sum, f) => sum + (f.rate ?? 1), 0) || 1;
-    const produced = hive.honey?.produced ?? 0;
-    const remaining = Math.max(0, BEEHIVE_FULL_MS - produced);
-    const readyAt = (hive.honey?.updatedAt ?? now) + remaining / rate;
-    push('beehives', 'Honey', readyAt, id, 'Honey', hive.honey?.updatedAt);
+    if (!placed(hive)) continue;
+    // Avisamos quando a colmeia enche; o início da barra é quando ela estava vazia.
+    const readyAt = hiveFullAt(hive);
+    const rate = (hive.flowers ?? []).reduce((sum, f) => sum + (f.rate ?? 1), 0) || 1;
+    push('beehives', 'Honey', readyAt, id, 'Honey', readyAt ? readyAt - BEEHIVE_FULL_MS / rate : null);
   }
 
   for (const [name, list] of Object.entries(farm.buildings ?? {})) {

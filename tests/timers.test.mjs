@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { extractTimers, groupTimers, isWanted, defaultPrefs, notificationText, CROP_MS } from '../supabase/functions/_shared/farm-timers.js';
+import { extractTimers, groupTimers, hiveFullAt, isWanted, defaultPrefs, notificationText, BEEHIVE_FULL_MS, CROP_MS } from '../supabase/functions/_shared/farm-timers.js';
 import { itemImage } from '../supabase/functions/_shared/item-image.js';
 
 const farm = JSON.parse(readFileSync(new URL('../fixtures/farm.json', import.meta.url))).farm;
@@ -106,4 +106,21 @@ test('cada venda vira um aviso, mesmo no mesmo minuto, com preço bruto e líqui
   const text = notificationText(groups[0], 'pt');
   assert.equal(text.title, 'Vendeu 33 Barley por 0,82 FLOWER!');
   assert.match(text.body, /0,7585 FLOWER já sem a taxa/);
+});
+
+test('colmeia recolocada (com removedAt antigo e coordenadas) conta como colocada', () => {
+  const hive = { x: -2, y: 6, removedAt: 1, honey: { produced: 0, updatedAt: 1000 }, flowers: [{ attachedAt: 1000, attachedUntil: 1000 + BEEHIVE_FULL_MS, rate: 1 }] };
+  const [t] = extractTimers({ beehives: { a: hive } });
+  assert.equal(t.category, 'beehives');
+  assert.equal(t.readyAt, 1000 + BEEHIVE_FULL_MS);
+});
+
+test('colmeia: enche só enquanto há flor ligada', () => {
+  const H = 3600_000;
+  // Flor com velocidade 2 por 6 h: enche em 12 h de "trabalho" = 6 h de relógio.
+  assert.equal(hiveFullAt({ honey: { produced: 12 * H, updatedAt: 0 }, flowers: [{ attachedAt: 0, attachedUntil: 6 * H, rate: 2 }] }), 6 * H);
+  // Flor acaba antes de encher: sem hora.
+  assert.equal(hiveFullAt({ honey: { produced: 0, updatedAt: 0 }, flowers: [{ attachedAt: 0, attachedUntil: 6 * H, rate: 1 }] }), null);
+  // Duas flores em sequência.
+  assert.equal(hiveFullAt({ honey: { produced: 0, updatedAt: 0 }, flowers: [{ attachedAt: 0, attachedUntil: 12 * H, rate: 1 }, { attachedAt: 12 * H, attachedUntil: 30 * H, rate: 2 }] }), 18 * H);
 });
