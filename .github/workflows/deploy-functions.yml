@@ -6,7 +6,7 @@ name: Deploy Supabase functions
 on:
   push:
     branches: [main]
-    paths: ['supabase/functions/**']
+    paths: ['supabase/functions/**', '.github/workflows/deploy-functions.yml']
   workflow_dispatch:
 
 jobs:
@@ -21,6 +21,7 @@ jobs:
         with:
           version: latest
       - name: Publicar funções
+        # --yes: o CLI novo pede confirmação antes de publicar e o Actions não tem como responder.
         run: |
-          supabase functions deploy push-api --project-ref "$PROJECT_ID" --no-verify-jwt
-          supabase functions deploy push-tick --project-ref "$PROJECT_ID" --no-verify-jwt
+          supabase functions deploy push-api --project-ref "$PROJECT_ID" --no-verify-jwt --yes
+          supabase functions deploy push-tick --project-ref "$PROJECT_ID" --no-verify-jwt --yes
