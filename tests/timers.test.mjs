@@ -124,3 +124,18 @@ test('colmeia: enche só enquanto há flor ligada', () => {
   // Duas flores em sequência.
   assert.equal(hiveFullAt({ honey: { produced: 0, updatedAt: 0 }, flowers: [{ attachedAt: 0, attachedUntil: 12 * H, rate: 1 }, { attachedAt: 12 * H, attachedUntil: 30 * H, rate: 2 }] }), 18 * H);
 });
+
+test('flores: cada crítico guardado no plantio rende +1 (2 canteiros podem dar 4 flores)', () => {
+  const bed = (crit) => ({ x: 0, flower: { name: 'Red Balloon Flower', plantedAt: 1, criticalHit: crit } });
+  const [g] = groupTimers(extractTimers({ flowers: { flowerBeds: { a: bed({ Butterfly: 1, 'Petalled Perk': 0 }), b: bed({ Butterfly: 0, 'Petalled Perk': 1 }) } } }));
+  assert.equal(g.count, 2);
+  assert.equal(g.amount, 4);
+  assert.equal(notificationText(g, 'pt').title, '4 Red Balloon Flower prontos!');
+});
+
+test('árvores e pedras: o aviso conta o que está pronto, sem inventar quantidade', () => {
+  const t = notificationText({ category: 'trees', name: 'Wood', count: 22, amount: 22, keys: ['k'] }, 'pt');
+  assert.equal(t.title, '22 árvores prontas!');
+  const fresh = notificationText({ category: 'crops', name: 'Wheat', count: 62, amount: 148.8, fresh: 30, keys: ['k'] }, 'pt');
+  assert.match(fresh.body, /30 novos agora/);
+});

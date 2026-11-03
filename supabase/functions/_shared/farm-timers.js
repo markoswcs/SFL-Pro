@@ -146,7 +146,9 @@ export function extractTimers(farm, now = Date.now()) {
     if (!f?.name || !placed(bed)) continue;
     const type = Object.keys(FLOWER_TYPE_TO_SEED).find(t => f.name.includes(t));
     const ms = FLOWER_SEED_MS[FLOWER_TYPE_TO_SEED[type]] ?? 24 * H;
-    push('flowers', f.name, nodeReadyAt(f, 'plantedAt', ms), id, f.name, f.plantedAt);
+    // Os críticos já vêm sorteados no plantio (criticalHit); cada um rende +1 flor na colheita.
+    const crits = Object.values(f.criticalHit ?? {}).filter(Boolean).length;
+    push('flowers', f.name, nodeReadyAt(f, 'plantedAt', ms), id, f.name, f.plantedAt, f.amount ?? 1 + crits);
   }
 
   for (const [id, tree] of Object.entries(farm.trees ?? {})) {
@@ -291,6 +293,22 @@ export function defaultPrefs() {
 
 export const categoryLabel = (id, lang = 'pt') => (lang === 'en' ? CATEGORY_BY_ID[id]?.en : CATEGORY_BY_ID[id]?.label) ?? id;
 
+// Para estes o rendimento depende de sorte na hora de coletar, então o aviso fala do que está pronto.
+const NODE_NOUNS = {
+  trees: ['árvore', 'árvores', 'tree', 'trees'],
+  stones: ['pedra', 'pedras', 'stone rock', 'stone rocks'],
+  iron: ['mina de ferro', 'minas de ferro', 'iron rock', 'iron rocks'],
+  gold: ['mina de ouro', 'minas de ouro', 'gold rock', 'gold rocks'],
+  crimstones: ['crimstone', 'crimstones', 'crimstone rock', 'crimstone rocks'],
+  sunstones: ['sunstone', 'sunstones', 'sunstone rock', 'sunstone rocks'],
+  oilReserves: ['poço de petróleo', 'poços de petróleo', 'oil reserve', 'oil reserves'],
+  salt: ['salina', 'salinas', 'salt node', 'salt nodes'],
+  beehives: ['colmeia cheia', 'colmeias cheias', 'beehive full', 'beehives full'],
+};
+
+// Quando o aviso soma itens que já estavam prontos, diz quantos são novos.
+const freshText = (group, n, en) => (group.fresh && group.fresh < n ? (en ? ` · ${group.fresh} new` : ` · ${group.fresh} ${group.fresh > 1 ? 'novos' : 'novo'} agora`) : '');
+
 const fmt = (n, lang) => new Intl.NumberFormat(lang === 'en' ? 'en-US' : 'pt-BR', { maximumFractionDigits: n < 1 ? 4 : 2 }).format(n);
 
 /** Texto da notificação. `tz` é o fuso do aparelho, para a hora de fechar da ilha sair certa. */
@@ -334,10 +352,19 @@ export function notificationText(group, lang = 'pt', tz = 'America/Sao_Paulo') {
         : { title: `Vendeu ${qty} ${group.name}${gross ? ` por ${gross} FLOWER` : ''}!`, body: got ? `Você recebe ${got} FLOWER já sem a taxa · colete no jogo` : 'Anúncio vendido no mercado' };
     }
     default: {
+      const nouns = NODE_NOUNS[group.category];
+      if (nouns) {
+        const noun = en ? nouns[n > 1 ? 3 : 2] : nouns[n > 1 ? 1 : 0];
+        const fresh = freshText(group, n, en);
+        return en
+          ? { title: `${n} ${noun}${group.category === 'beehives' ? '' : ' ready'}!`, body: `${group.name} to collect · ${label}${fresh}` }
+          : { title: `${n} ${noun} ${n > 1 ? 'prontas' : 'pronta'}!`.replace('cheias prontas', 'cheias').replace('cheia pronta', 'cheia'), body: `${group.name} para coletar · ${label}${fresh}` };
+      }
+      const fresh = freshText(group, n, en);
       const nodes = n > 1 ? `${n} ${en ? 'spots' : 'pontos'} · ` : '';
       return en
-        ? { title: `${qty} ${group.name} ready!`, body: `${nodes}Ready to collect · ${label}` }
-        : { title: `${qty} ${group.name} ${(group.amount ?? n) > 1 ? 'prontos' : 'pronto'}!`, body: `${nodes}Pronto para coletar · ${label}` };
+        ? { title: `${qty} ${group.name} ready!`, body: `${nodes}Ready to collect · ${label}${fresh}` }
+        : { title: `${qty} ${group.name} ${(group.amount ?? n) > 1 ? 'prontos' : 'pronto'}!`, body: `${nodes}Pronto para coletar · ${label}${fresh}` };
     }
   }
 }

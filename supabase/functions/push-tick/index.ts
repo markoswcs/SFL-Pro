@@ -1,16 +1,21 @@
 // Roda a cada 10 segundos pelo pg_cron.
 // 1) Relê em lote as fazendas cuja hora de atualizar chegou e guarda os timers.
 // 2) Envia push para tudo o que ficou pronto, respeitando as preferências de cada aparelho.
+// 3) Fica acordada até a próxima rodada para avisar no segundo exato o que fica pronto nesse meio-tempo.
 import { displayTag, groupTimers, isWanted, notificationText } from '../_shared/farm-timers.js';
 import { db, fetchFarms, itemImage, json, sendPush, storeTimers, type Device } from '../_shared/server.ts';
 
-const REFRESH_MS = 2 * 60_000; // a mesma fazenda é relida a cada 2 min para pegar o que foi plantado ou vendido
+const REFRESH_MS = 60_000; // a mesma fazenda é relida a cada 1 min para pegar o que foi plantado, colhido ou vendido
 const BATCH = 40; // fazendas por chamada; o limite da resposta é 5,5 MB
-const SUMMARY_AFTER = 3; // mais que isso no mesmo minuto vira uma notificação só
+const SUMMARY_AFTER = 6; // mais que isso na mesma rodada vira uma notificação só (com as quantidades)
+const WINDOW_MS = 60 * 60_000; // avisa o que ficou pronto na última hora (cobre falhas temporárias da API)
+const TICK_MS = 10_000; // intervalo do cron
 // Vendas e a ilha flutuante sempre chegam sozinhas: o valor recebido e a hora de fechar importam.
 const NEVER_SUMMARIZE = new Set(['sales', 'offers', 'floatingIsland']);
 const PRICES_EVERY_MS = 30 * 60_000; // uma foto dos preços do mercado a cada 30 min
 const NFT_EVERY_MS = 2 * 3600_000; // os floors dos NFTs (~850 itens) a cada 2 h
+
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 const tagOf = (g: { category: string; name: string; readyAt: number; keys?: string[] }) =>
   g.category === 'sales' || g.category === 'offers' ? `${g.category}:${g.keys?.[0]}` : `${g.category}:${g.name}:${Math.round(g.readyAt / 60_000)}`;
@@ -87,7 +92,7 @@ async function dispatch() {
   const now = Date.now();
   const { data: timers } = await db.from('sflpro_timers').select('*')
     .lte('ready_at', new Date(now).toISOString())
-    .gte('ready_at', new Date(now - 30 * 60_000).toISOString());
+    .gte('ready_at', new Date(now - WINDOW_MS).toISOString());
   if (!timers?.length) return 0;
 
   const byFarm = new Map<number, typeof timers>();
@@ -113,22 +118,49 @@ async function dispatch() {
     const toSend = fresh.filter(g => mine.has(tagOf(g)));
     if (!toSend.length) continue;
 
+    // O aviso fala do total pronto do item, não só do que ficou pronto agora: um aviso novo de
+    // "Red Balloon Flower" substitui o anterior (mesma tag), então precisa somar os dois.
+    const { data: readyRows } = await db.from('sflpro_timers').select('category, name, amount')
+      .eq('farm_id', farmId).lte('ready_at', new Date(now).toISOString());
+    const totals = new Map<string, { count: number; amount: number }>();
+    for (const r of readyRows ?? []) {
+      const k = `${r.category}:${r.name}`;
+      const t = totals.get(k) ?? { count: 0, amount: 0 };
+      t.count += 1;
+      t.amount += r.amount == null ? 1 : Number(r.amount);
+      totals.set(k, t);
+    }
+    // Um aviso por item na rodada, com o total e quantos são novos.
+    const byItem = new Map<string, typeof toSend[number] & { fresh?: number; tags: string[] }>();
+    for (const g of toSend) {
+      const tag = displayTag(g);
+      const prev = byItem.get(tag);
+      if (prev) { prev.fresh = (prev.fresh ?? prev.count) + g.count; prev.tags.push(tagOf(g)); prev.readyAt = Math.max(prev.readyAt, g.readyAt); continue; }
+      const total = NEVER_SUMMARIZE.has(g.category) ? null : totals.get(`${g.category}:${g.name}`);
+      byItem.set(tag, total && total.count > g.count
+        ? { ...g, fresh: g.count, count: total.count, amount: Math.round(total.amount * 100) / 100, tags: [tagOf(g)] }
+        : { ...g, tags: [tagOf(g)] });
+    }
+    const items = [...byItem.values()];
+
     const { data: devices } = await db.from('sflpro_devices').select('*').eq('farm_id', farmId);
     // Aviso que nenhum aparelho conseguiu receber é desmarcado para a próxima rodada tentar de novo.
     const attempted = new Set<string>();
     const delivered = new Set<string>();
-    const track = (groups: typeof toSend, ok: boolean) => groups.forEach(g => { attempted.add(tagOf(g)); if (ok) delivered.add(tagOf(g)); });
+    const track = (groups: typeof items, ok: boolean) => groups.forEach(g => g.tags.forEach(tag => { attempted.add(tag); if (ok) delivered.add(tag); }));
     for (const device of (devices ?? []) as Device[]) {
       const lang = device.prefs?.lang === 'en' ? 'en' : 'pt';
       const tz = typeof device.prefs?.tz === 'string' ? device.prefs.tz : undefined;
-      const wanted = toSend.filter(g => isWanted(device.prefs, g.category, g.name));
+      const wanted = items.filter(g => isWanted(device.prefs, g.category, g.name));
       const solo = wanted.filter(g => NEVER_SUMMARIZE.has(g.category));
       const rest = wanted.filter(g => !NEVER_SUMMARIZE.has(g.category));
       if (rest.length > SUMMARY_AFTER) {
-        const names = [...new Set(rest.map(g => g.name))];
+        // Resumo com as quantidades: "4 Red Balloon Flower, 148,8 Wheat, 22 Wood…".
+        const qty = (g: typeof rest[number]) => new Intl.NumberFormat(lang === 'en' ? 'en-US' : 'pt-BR', { maximumFractionDigits: 1 }).format(g.amount ?? g.count);
+        const names = rest.map(g => `${qty(g)} ${g.name}`);
         const ok = await sendPush(device, {
           title: lang === 'en' ? `${rest.length} things ready on your farm` : `${rest.length} coisas prontas na fazenda`,
-          body: names.slice(0, 5).join(', ') + (names.length > 5 ? (lang === 'en' ? ` and ${names.length - 5} more` : ` e mais ${names.length - 5}`) : ''),
+          body: names.slice(0, 6).join(', ') + (names.length > 6 ? (lang === 'en' ? ` and ${names.length - 6} more` : ` e mais ${names.length - 6}`) : ''),
           icon: itemImage(rest[0].image), tag: `sum:${Math.round(now / 60_000)}`, url: '/?tab=farm', timestamp: now,
         });
         track(rest, ok);
@@ -162,6 +194,17 @@ Deno.serve(async req => {
   const farms = await refreshFarms();
   const sentAfter = await dispatch();
   const prices = await snapshotPrices().catch(e => { console.error('preços falharam', (e as Error).message); return false; });
+  let sentSoon = 0;
+  const until = started + TICK_MS - 500;
+  const { data: soon } = await db.from('sflpro_timers').select('ready_at')
+    .gt('ready_at', new Date().toISOString()).lte('ready_at', new Date(until).toISOString()).order('ready_at');
+  // Um envio por segundo distinto (no máximo 5), logo depois de cada item ficar pronto.
+  const moments = [...new Set((soon ?? []).map(r => Math.ceil(new Date(r.ready_at).getTime() / 1000) * 1000))].slice(0, 5);
+  for (const at of moments) {
+    if (at > until) break;
+    await sleep(Math.max(0, at - Date.now() + 200));
+    sentSoon += await dispatch();
+  }
   await db.from('sflpro_sent').delete().lt('sent_at', new Date(Date.now() - 3 * 86400_000).toISOString());
-  return json({ ok: true, ...farms, sent: sentBefore + sentAfter, prices, ms: Date.now() - started });
+  return json({ ok: true, ...farms, sent: sentBefore + sentAfter + sentSoon, soon: moments.length, prices, ms: Date.now() - started });
 });

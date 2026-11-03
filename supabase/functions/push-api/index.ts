@@ -43,7 +43,7 @@ Deno.serve(async req => {
         const farm = await fetchFarm(farmId);
         const now = new Date().toISOString();
         const { error: farmErr } = await db.from('sflpro_farms').upsert({
-          farm_id: farmId, next_fetch_at: new Date(Date.now() + 2 * 60_000).toISOString(),
+          farm_id: farmId, next_fetch_at: new Date(Date.now() + 60_000).toISOString(),
           last_fetch_at: now, last_error: null, fail_count: 0, updated_at: now,
         });
         if (farmErr) throw farmErr;

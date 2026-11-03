@@ -44,9 +44,10 @@ export async function fetchFarm(farmId: string | number) {
 /** Substitui os timers guardados da fazenda pelos lidos agora. */
 export async function storeTimers(farmId: number, farm: unknown) {
   const now = Date.now();
-  // Guarda só o que ainda vai ficar pronto ou ficou pronto há pouco; o resto não gera aviso.
+  // Guarda também o que já está pronto (até 3 dias): o aviso soma o total pronto de cada item.
+  // Só gera aviso o que ficou pronto na última hora (push-tick); o que foi coletado some na próxima leitura.
   const rows = extractTimers(farm, now)
-    .filter((t: { readyAt: number }) => t.readyAt > now - 10 * 60_000 && t.readyAt < now + 14 * 86400_000)
+    .filter((t: { readyAt: number }) => t.readyAt > now - 3 * 86400_000 && t.readyAt < now + 14 * 86400_000)
     .map((t: { key: string; category: string; name: string; image: string; readyAt: number; amount?: number; meta?: unknown }) => ({
       farm_id: farmId, timer_key: t.key, category: t.category, name: t.name, image: t.image, ready_at: new Date(t.readyAt).toISOString(),
       amount: t.amount ?? 1, meta: t.meta ?? null,
@@ -120,7 +121,8 @@ export async function sendPush(device: Device, payload: Record<string, unknown>)
       JSON.stringify(payload),
       // Sem Topic: no FCM, mensagens com Topic viram "recolhíveis" e, com o celular dormindo,
       // só 4 delas ficam na fila; o resto era descartado. A troca de aviso repetido já é feita pela tag.
-      { TTL: 60 * 60, urgency: 'high' },
+      // TTL de 3 h: com o celular desligado ou sem rede, o aviso ainda chega quando ele voltar.
+      { TTL: 3 * 60 * 60, urgency: 'high' },
     );
     await db.from('sflpro_devices').update({ last_push_at: new Date().toISOString() }).eq('id', device.id);
     return true;
