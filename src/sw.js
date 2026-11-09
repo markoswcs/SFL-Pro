@@ -28,19 +28,39 @@ self.addEventListener('message', event => {
 
 // A arte do jogo é pixelada e pequena (16–32 px); o sistema a amplia borrada.
 // Aqui ela é ampliada sem suavizar, sobre um quadro arredondado no tema do app.
+const APP_ICON = '/icons/icon-192.png';
+const ICON_CACHE = 'sfl-notif-icons';
+
+// sfl.world não libera CORS: a imagem passa pelo proxy do próprio app para poder ser desenhada.
+const iconFetchUrl = src => {
+  const url = new URL(src, self.location.origin);
+  return url.hostname === 'sfl.world' ? `/api/sfl?url=${encodeURIComponent(url.href)}` : url.href;
+};
+
+/**
+ * Arte do item guardada no aparelho. O app aberto avisa quais itens vão aparecer (WARM_ICONS) e eles
+ * são baixados antes; na hora do aviso o celular não depende da rede, que demora para acordar.
+ */
+async function iconBlob(src, timeoutMs = 3000) {
+  const fetchUrl = iconFetchUrl(src);
+  const cache = await caches.open(ICON_CACHE);
+  const hit = await cache.match(fetchUrl);
+  if (hit) return hit.blob();
+  const res = await fetch(fetchUrl, { mode: 'cors', signal: AbortSignal.timeout(timeoutMs) });
+  if (!res.ok) throw new Error(`ícone ${res.status}`);
+  await cache.put(fetchUrl, res.clone());
+  return res.blob();
+}
+
 async function pixelIcon(src) {
-  if (!src || typeof OffscreenCanvas === 'undefined') return src;
-  // Com o celular acordando a rede pode demorar: depois de 3 s mostra o aviso com o ícone original.
-  return Promise.race([drawPixelIcon(src), new Promise(resolve => setTimeout(() => resolve(src), 3000))]);
+  if (!src || typeof OffscreenCanvas === 'undefined') return src || APP_ICON;
+  // Sem a arte em 3 s, vai o girassol do app (antes ia o endereço remoto e o Android mostrava só a inicial).
+  return Promise.race([drawPixelIcon(src), new Promise(resolve => setTimeout(() => resolve(APP_ICON), 3000))]);
 }
 
 async function drawPixelIcon(src) {
   try {
-    const url = new URL(src, self.location.origin);
-    const fetchUrl = url.hostname === 'sfl.world' ? `/api/sfl?url=${encodeURIComponent(url.href)}` : url.href;
-    const res = await fetch(fetchUrl, { mode: 'cors', signal: AbortSignal.timeout(3000) });
-    if (!res.ok) return src;
-    const bitmap = await createImageBitmap(await res.blob());
+    const bitmap = await createImageBitmap(await iconBlob(src));
     const size = 192;
     const canvas = new OffscreenCanvas(size, size);
     const ctx = canvas.getContext('2d');
@@ -59,11 +79,17 @@ async function drawPixelIcon(src) {
     for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
     return `data:image/png;base64,${btoa(bin)}`;
   } catch {
-    return src;
+    return APP_ICON;
   }
 }
 
 self.addEventListener('message', event => {
+  // O app aberto manda a lista de ícones dos itens da fazenda para já ficarem guardados no aparelho.
+  if (event.data?.type === 'WARM_ICONS') {
+    event.waitUntil((async () => {
+      for (const src of event.data.urls ?? []) await iconBlob(src, 8000).catch(() => {});
+    })());
+  }
   // O app aberto pede para mostrar um aviso local com o mesmo tratamento de ícone do push.
   if (event.data?.type === 'SHOW') {
     const { title, options } = event.data;

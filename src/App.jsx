@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { registerSW } from 'virtual:pwa-register';
-import { extractTimers, groupTimers } from '../supabase/functions/_shared/farm-timers.js';
+import { CATEGORIES, extractTimers, groupTimers } from '../supabase/functions/_shared/farm-timers.js';
+import { itemImage } from '../supabase/functions/_shared/item-image.js';
 import { useGameData, useNow } from './lib/hooks.js';
 import { enablePush, scheduleLocal } from './lib/push.js';
 import { farmLink, SUPPORT } from './lib/farmInfo.js';
@@ -146,6 +147,13 @@ function Shell() {
   }, [settings.farmId, settings.prefs, settings.pushEndpoint]);
 
   const timers = useMemo(() => extractTimers(data.farm), [data.farm]);
+  // Deixa guardada no aparelho a arte de cada item que pode virar aviso: na hora do push o ícone
+  // sai da cópia local, sem esperar a rede do celular acordar.
+  const iconKey = useMemo(() => [...new Set([...timers.map(t => t.image), ...CATEGORIES.map(c => c.image)])].sort().join('|'), [timers]);
+  useEffect(() => {
+    if (!iconKey || !('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.ready.then(reg => reg.active?.postMessage({ type: 'WARM_ICONS', urls: iconKey.split('|').map(itemImage) })).catch(() => {});
+  }, [iconKey]);
   useEffect(() => {
     if (!settings.localAlerts || settings.pushEndpoint) return undefined;
     return scheduleLocal(timers, settings.prefs, { sound: settings.sound, lang: settings.lang });

@@ -49,8 +49,11 @@ test('preferências: item desligado vence categoria ligada', () => {
 
 test('imagens: arte oficial quando existe, sfl.world como reserva', () => {
   assert.match(itemImage('Lemon Cheesecake'), /raw\.githubusercontent\.com\/sunflower-land/);
-  assert.match(itemImage('Wheat'), /sfl\.world\/img\/source\/Wheat\.png/);
-  assert.match(itemImage('Cow'), /Milk/);
+  // Plantações, recursos e animais vêm do servidor de imagens do jogo (game-assets).
+  assert.equal(itemImage('Wheat'), 'https://sunflower-land.com/game-assets/crops/wheat/crop.png');
+  assert.match(itemImage('Cow'), /^https:\/\/sunflower-land\.com\/game-assets\//);
+  assert.equal(itemImage('Flower'), '/icons/flower_token.webp');
+  assert.match(itemImage('Item Que Não Existe'), /sfl\.world\/img\/source\//);
 });
 
 test('porcos entram nos animais e o carinho libera em 1/3 do sono', () => {
