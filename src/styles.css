@@ -590,3 +590,11 @@ a.pref:hover .title { color: var(--sun); }
 .worth .grow > span { font-size: 13px; color: var(--text-2); }
 .worth-split { display: grid; gap: 4px; font-size: 13px; color: var(--text-2); text-align: right; }
 .worth-split b { color: var(--text); font-weight: 800; }
+
+/* Novidades: markdown do Discord */
+.news-card .md { margin-top: 8px; display: grid; gap: 8px; }
+.news-card .md h4 { font: 800 16px/1.3 var(--pixel); }
+.news-card .md p { color: var(--text-2); }
+.news-card .md ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; color: var(--text-2); }
+.news-actions { margin-top: 10px; flex-wrap: wrap; gap: 12px; }
+.news-link { font-size: 13px; font-weight: 700; }

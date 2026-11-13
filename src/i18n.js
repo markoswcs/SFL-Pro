@@ -157,6 +157,7 @@ const pt = {
   'detect.title': 'Você gastou {spent} FLOWER no mercado', 'detect.text': 'Em {when}. O que você comprou?', 'detect.notBuy': 'Não foi uma compra',
   'inv.worth': 'Patrimônio no mercado', 'inv.resources': 'Recursos', 'inv.sort.boost': 'Com boost',
   'inv.nftHint': 'Avaliados pelo menor preço à venda (floor) no mercado, sem taxas. Colecionáveis do inventário e roupas do guarda-roupa.',
+  'news.translating': 'Traduzindo…', 'news.more': 'Ver mais', 'news.less': 'Ver menos', 'news.showOriginal': 'Ver original em inglês', 'news.showTranslation': 'Ver tradução', 'news.noTranslation': 'Tradução indisponível; mostrando o original.',
 };
 
 const en = {
@@ -316,6 +317,7 @@ const en = {
   'detect.title': 'You spent {spent} FLOWER on the market', 'detect.text': 'On {when}. What did you buy?', 'detect.notBuy': 'It wasn’t a purchase',
   'inv.worth': 'Market net worth', 'inv.resources': 'Resources', 'inv.sort.boost': 'With boost',
   'inv.nftHint': 'Valued at the lowest market listing (floor), without fees. Collectibles in your inventory and wearables in your wardrobe.',
+  'news.translating': 'Translating…', 'news.more': 'Show more', 'news.less': 'Show less', 'news.showOriginal': 'Show original', 'news.showTranslation': 'Show translation', 'news.noTranslation': 'Translation unavailable; showing the original.',
 };
 
 const DICTS = { pt, en };

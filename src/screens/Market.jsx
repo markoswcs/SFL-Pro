@@ -51,7 +51,61 @@ function Sales({ farm, rate, currency, lang }) {
   );
 }
 
-function News() {
+// Markdown do Discord em blocos simples: títulos (##), listas (-) e parágrafos.
+function Markdown({ text }) {
+  const blocks = [];
+  for (const line of text.split('\n')) {
+    const heading = line.match(/^#{1,6}\s+(.*)/);
+    const item = line.match(/^\s*[-*•]\s+(.*)/);
+    if (heading) blocks.push({ type: 'h', text: heading[1] });
+    else if (item) {
+      const last = blocks[blocks.length - 1];
+      if (last?.type === 'ul') last.items.push(item[1]); else blocks.push({ type: 'ul', items: [item[1]] });
+    } else if (line.trim()) blocks.push({ type: 'p', text: line.replace(/^>\s*/, '') });
+  }
+  return (
+    <div className="md">
+      {blocks.map((b, i) => (b.type === 'h' ? <h4 key={i}>{b.text}</h4>
+        : b.type === 'ul' ? <ul key={i}>{b.items.map((x, j) => <li key={j}>{x}</li>)}</ul>
+        : <p key={i}>{b.text}</p>))}
+    </div>
+  );
+}
+
+const COLLAPSED_CHARS = 600;
+
+/** Anúncio oficial; com o app em português, mostra a tradução (e o original num toque). */
+function Announcement({ n, lang }) {
+  const t = useT();
+  const [original, setOriginal] = useState(false);
+  const [open, setOpen] = useState(false);
+  // O id do Discord carrega a data da mensagem (snowflake).
+  const at = n.timestamp ? new Date(n.timestamp).getTime() : n.id ? Number((BigInt(n.id) >> 22n) + 1420070400000n) : 0;
+  const text = String(n.content ?? '').replace(/<a?:(\w+):\d+>/g, '').replace(/<@&?\d+>/g, '@').replace(/\*\*|__|~~/g, '').trim();
+  // Os anúncios vêm em inglês: só traduz quando o app está em português.
+  const translate = lang !== 'en' && !!text;
+  const { data, loading, error } = useResource(`news-tr:${n.id}`, () => fetch(`/api/translate?to=pt&text=${encodeURIComponent(text.slice(0, 4000))}`)
+    .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status))))), { ttl: 7 * 86400_000, enabled: translate });
+  const translated = translate && !original && data?.text;
+  const shown = translated ? data.text : text;
+  const long = shown.length > COLLAPSED_CHARS;
+  return (
+    <article className="card news-card">
+      <div className="row"><h3 className="grow ellipsis">#{n.channelName ?? 'news'}</h3>{at > 0 && <time>{timeAgo(at, lang)}</time>}</div>
+      {translate && loading && !data && <p className="hint">{t('news.translating')}</p>}
+      <Markdown text={long && !open ? `${shown.slice(0, COLLAPSED_CHARS).replace(/\s+\S*$/, '')}…` : shown} />
+      <div className="row news-actions">
+        {long && <button className="link-btn" onClick={() => setOpen(o => !o)}>{open ? t('news.less') : t('news.more')}</button>}
+        {translate && data?.text && <button className="link-btn" style={{ color: 'var(--muted)' }} onClick={() => setOriginal(o => !o)}>{original ? t('news.showTranslation') : t('news.showOriginal')}</button>}
+        {translate && error && <span className="hint">{t('news.noTranslation')}</span>}
+        <span className="spacer grow" />
+        {n.url && <a href={n.url} target="_blank" rel="noreferrer" className="news-link">{t('market.openDiscord')}</a>}
+      </div>
+    </article>
+  );
+}
+
+function News({ lang }) {
   const t = useT();
   const { data, error, loading } = useResource('news', () => api.community('discordAnnouncements'), { ttl: 300_000 });
   if (error) return <Notice kind="err">{error.message}</Notice>;
@@ -60,18 +114,7 @@ function News() {
   if (!list.length) return <Empty title={t('market.noNews')} />;
   return (
     <div className="news">
-      {list.slice(0, 30).map((n, i) => {
-        // O id do Discord carrega a data da mensagem (snowflake).
-        const at = n.timestamp ? new Date(n.timestamp).getTime() : n.id ? Number((BigInt(n.id) >> 22n) + 1420070400000n) : 0;
-        const text = String(n.content ?? '').replace(/<a?:(\w+):\d+>/g, '').replace(/<@&?\d+>/g, '@').replace(/\*\*|__|~~/g, '').trim();
-        return (
-          <article className="card" key={n.id ?? i}>
-            <div className="row"><h3 className="grow ellipsis">#{n.channelName ?? 'news'}</h3>{at > 0 && <time>{timeAgo(at)}</time>}</div>
-            <p>{text.length > 700 ? `${text.slice(0, 700)}…` : text}</p>
-            {n.url && <a href={n.url} target="_blank" rel="noreferrer" style={{ display: 'inline-block', marginTop: 8, fontSize: 13, fontWeight: 700 }}>{t('market.openDiscord')}</a>}
-          </article>
-        );
-      })}
+      {list.slice(0, 30).map((n, i) => <Announcement key={n.id ?? i} n={n} lang={lang} />)}
     </div>
   );
 }
@@ -102,7 +145,7 @@ export default function Market({ data, settings }) {
       {tab === 'buys' && <Buys farm={data.farm} land={data.land} prices={data.prices} settings={settings} rate={rate} currency={settings.currency} exchange={data.exchange} adding={adding} onAdding={setAdding} />}
       {tab === 'inventory' && <Inventory farm={data.farm} prices={data.prices} rate={rate} currency={settings.currency} />}
       {tab === 'sales' && <Sales farm={data.farm} rate={rate} currency={settings.currency} lang={settings.lang} />}
-      {tab === 'news' && <News />}
+      {tab === 'news' && <News lang={settings.lang} />}
     </div>
   );
 }

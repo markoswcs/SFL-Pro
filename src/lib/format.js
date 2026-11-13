@@ -39,10 +39,10 @@ export function money(value, currency = 'brl') {
   }).format(Number(value ?? 0));
 }
 
-export function timeAgo(ts) {
+export function timeAgo(ts, lang = 'pt') {
   const diff = Date.now() - ts;
-  if (diff < 60_000) return 'agora';
-  if (diff < 3600_000) return `há ${Math.floor(diff / 60_000)} min`;
-  if (diff < 86400_000) return `há ${Math.floor(diff / 3600_000)} h`;
-  return `há ${Math.floor(diff / 86400_000)} d`;
+  const en = lang === 'en';
+  if (diff < 60_000) return en ? 'now' : 'agora';
+  const [n, unit] = diff < 3600_000 ? [Math.floor(diff / 60_000), 'min'] : diff < 86400_000 ? [Math.floor(diff / 3600_000), 'h'] : [Math.floor(diff / 86400_000), 'd'];
+  return en ? `${n} ${unit} ago` : `há ${n} ${unit}`;
 }
