@@ -155,6 +155,8 @@ const pt = {
   'inv.change': 'Variação {p}', 'inv.noHistory': 'sem histórico ainda', 'inv.sort.value': 'Mais valiosos', 'inv.sort.up': 'Subiram', 'inv.sort.down': 'Caíram',
   'buys.src.auto': 'detectada automaticamente',
   'detect.title': 'Você gastou {spent} FLOWER no mercado', 'detect.text': 'Em {when}. O que você comprou?', 'detect.notBuy': 'Não foi uma compra',
+  'inv.worth': 'Patrimônio no mercado', 'inv.resources': 'Recursos', 'inv.sort.boost': 'Com boost',
+  'inv.nftHint': 'Avaliados pelo menor preço à venda (floor) no mercado, sem taxas. Colecionáveis do inventário e roupas do guarda-roupa.',
 };
 
 const en = {
@@ -312,6 +314,8 @@ const en = {
   'inv.change': 'Change {p}', 'inv.noHistory': 'no history yet', 'inv.sort.value': 'Most valuable', 'inv.sort.up': 'Went up', 'inv.sort.down': 'Went down',
   'buys.src.auto': 'detected automatically',
   'detect.title': 'You spent {spent} FLOWER on the market', 'detect.text': 'On {when}. What did you buy?', 'detect.notBuy': 'It wasn’t a purchase',
+  'inv.worth': 'Market net worth', 'inv.resources': 'Resources', 'inv.sort.boost': 'With boost',
+  'inv.nftHint': 'Valued at the lowest market listing (floor), without fees. Collectibles in your inventory and wearables in your wardrobe.',
 };
 
 const DICTS = { pt, en };

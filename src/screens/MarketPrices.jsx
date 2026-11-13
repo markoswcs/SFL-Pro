@@ -571,48 +571,10 @@ export function Buys({ farm, land, prices, settings, rate, currency, exchange, a
 
 // ---------------------------------------------------------------- NFTs no inventário
 
-function NftHoldings({ farm, rate, currency, history }) {
-  const t = useT();
-  const { data: nfts, loading } = useNfts();
-  const rows = useMemo(() => {
-    const owned = ownedNfts(farm, nfts);
-    return nfts.filter(x => owned.has(x.key))
-      .map(x => ({ ...x, qty: owned.get(x.key), total: owned.get(x.key) * x.floor, stats: nftStats(history?.nft?.[x.key], x.floor) }))
-      .sort((a, b) => b.total - a.total);
-  }, [farm, nfts, history]);
-  const total = rows.reduce((s, r) => s + r.total, 0);
-  if (loading && !nfts.length) return <div className="skeleton" style={{ height: 120, marginTop: 16 }} />;
-  if (!rows.length) return null;
-  return (
-    <>
-      <div className="section-head" style={{ marginTop: 22 }}><h2>{t('nft.mine')}</h2><span className="count">{t('nft.count', { n: rows.length })}</span></div>
-      <div className="stat-grid">
-        <div className="card stat"><small>{t('nft.floorValue')}</small><strong className="sun">{flower(total)}</strong></div>
-        <div className="card stat"><small>{t('market.in', { cur: currency.toUpperCase() })}</small><strong>{rate ? money(total * rate, currency) : '—'}</strong></div>
-        <div className="card stat"><small>{t('nft.withBoost')}</small><strong>{rows.filter(r => r.boost).length}</strong></div>
-      </div>
-      <div className="list" style={{ marginTop: 12 }}>
-        {rows.map(r => (
-          <div className="list-row" key={r.key}>
-            <div className="thumb"><Thumb item={r} /></div>
-            <div className="grow" style={{ minWidth: 0 }}>
-              <div className="title ellipsis">{r.qty > 1 ? `${num(r.qty)} × ` : ''}{r.name}</div>
-              <div className="sub row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                <Delta v={r.stats.change24} label={r.stats.label24} /><Delta v={r.stats.change7} label={r.stats.label7} />
-                <span className="ellipsis">{r.boost ? `⚡ ${r.boost}` : t(`nft.kind.${r.kind}`)}</span>
-              </div>
-            </div>
-            <div className="val"><strong>{r.floor > 0 ? flower(r.total) : '—'}</strong><small>{r.floor > 0 && rate ? money(r.total * rate, currency) : t('nft.noFloor')}</small></div>
-          </div>
-        ))}
-      </div>
-    </>
-  );
-}
 
 // ---------------------------------------------------------------- inventário
 
-const INV_SORTS = ['value', 'up', 'down'];
+const INV_SORTS = { res: ['value', 'up', 'down'], nft: ['value', 'up', 'down', 'boost'] };
 
 /** Quanto o conjunto valia no ponto de referência, a partir da variação de cada item. */
 function valueThen(rows, key) {
@@ -627,11 +589,24 @@ function valueThen(rows, key) {
   return now > 0 ? { change: now / then - 1, delta: now - then } : null;
 }
 
+/** Ordena e filtra uma lista do inventário (recursos ou NFTs) pelo filtro escolhido. */
+function sortHoldings(list, sort) {
+  const by = key => (a, b) => (b.stats[key] ?? -Infinity) - (a.stats[key] ?? -Infinity);
+  const moved = r => r.stats.change24 ?? r.stats.change7 ?? 0;
+  if (sort === 'up') return list.filter(r => moved(r) > 0.0005).sort((a, b) => moved(b) - moved(a));
+  if (sort === 'down') return list.filter(r => moved(r) < -0.0005).sort((a, b) => moved(a) - moved(b));
+  if (sort === 'boost') return list.filter(r => r.boost).sort((a, b) => b.total - a.total);
+  return [...list].sort((a, b) => b.total - a.total || by('change24')(a, b));
+}
+
 export function Inventory({ farm, prices, rate, currency }) {
   const t = useT();
+  const [kind, setKind] = useState('res');
   const [sort, setSort] = useState('value');
   const { data: history } = usePriceHistory();
-  const all = useMemo(() => {
+  const { data: nfts, loading: nftLoading } = useNfts();
+
+  const resources = useMemo(() => {
     const p2p = prices?.p2p ?? {};
     const now = Date.now();
     return Object.entries(farm?.inventory ?? {})
@@ -639,51 +614,78 @@ export function Inventory({ farm, prices, rate, currency }) {
       .filter(r => r.qty > 0 && r.unit > 0)
       .map(r => ({ ...r, total: r.qty * r.unit, stats: itemStats(history, r.name, r.unit, now) }));
   }, [farm, prices, history]);
-  const rows = useMemo(() => {
-    const by = key => (a, b) => (b.stats[key] ?? -Infinity) - (a.stats[key] ?? -Infinity);
-    if (sort === 'up') return all.filter(r => (r.stats.change24 ?? 0) > 0.0005).sort(by('change24'));
-    if (sort === 'down') return all.filter(r => (r.stats.change24 ?? 0) < -0.0005).sort((a, b) => -by('change24')(a, b));
-    return [...all].sort((a, b) => b.total - a.total);
-  }, [all, sort]);
-  const total = all.reduce((s, r) => s + r.total, 0);
+
+  // NFTs: colecionáveis no inventário e roupas no guarda-roupa, avaliados pelo floor do mercado.
+  const nftRows = useMemo(() => {
+    const owned = ownedNfts(farm, nfts);
+    return nfts.filter(x => owned.has(x.key))
+      .map(x => ({ ...x, qty: owned.get(x.key), unit: x.floor, total: owned.get(x.key) * x.floor, stats: nftStats(history?.nft?.[x.key], x.floor) }));
+  }, [farm, nfts, history]);
+
+  const sumOf = list => list.reduce((s, r) => s + r.total, 0);
+  const resTotal = sumOf(resources);
+  const nftTotal = sumOf(nftRows);
+  const all = kind === 'res' ? resources : nftRows;
+  const rows = useMemo(() => sortHoldings(all, sort), [all, sort]);
+  const total = sumOf(all);
   const d24 = valueThen(all, 'change24');
   const d7 = valueThen(all, 'change7');
-  const label24 = all.find(r => r.stats.label24)?.stats.label24 ?? '24h';
+  const label24 = all.find(r => r.stats.change24 != null)?.stats.label24 ?? '24h';
   const label7 = all.find(r => r.stats.change7 != null)?.stats.label7 ?? '7d';
+  const switchKind = k => { setKind(k); setSort('value'); };
 
   if (!farm) return <Notice>{t('market.needFarm')}</Notice>;
   return (
     <>
-      <div className="stat-grid">
-        <div className="card stat"><small>{t('market.sellable')}</small><strong className="sun">{flower(total)}</strong><small>{rate ? money(total * rate, currency) : ''}</small></div>
+      <div className="card worth">
+        <div className="grow">
+          <small>{t('inv.worth')}</small>
+          <strong className="sun">{flower(resTotal + nftTotal)} <i>FLOWER</i></strong>
+          {rate > 0 && <span>{money((resTotal + nftTotal) * rate, currency)}</span>}
+        </div>
+        <div className="worth-split">
+          <span>{t('inv.resources')} <b>{flower(resTotal)}</b></span>
+          <span>NFTs <b>{nftLoading && !nfts.length ? '…' : flower(nftTotal)}</b></span>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 12 }}>
+        <Segmented value={kind} onChange={switchKind} options={[['res', t('price.kind.res', { n: resources.length })], ['nft', t('price.kind.nft', { n: nftLoading && !nfts.length ? '…' : nftRows.length })]]} />
+      </div>
+
+      <div className="stat-grid" style={{ marginTop: 12 }}>
+        <div className="card stat"><small>{kind === 'res' ? t('market.sellable') : t('nft.floorValue')}</small><strong className="sun">{flower(total)}</strong><small>{rate ? money(total * rate, currency) : ''}</small></div>
         <div className="card stat"><small>{t('inv.change', { p: label24 })}</small><strong className={tone(d24?.change)}>{pct(d24?.change)}</strong><small>{d24 ? `${signed(d24.delta, flower)} FLOWER` : t('inv.noHistory')}</small></div>
         <div className="card stat"><small>{t('inv.change', { p: label7 })}</small><strong className={tone(d7?.change)}>{pct(d7?.change)}</strong><small>{d7 ? `${signed(d7.delta, flower)} FLOWER` : t('inv.noHistory')}</small></div>
       </div>
       <div className="chip-row" style={{ margin: '12px -16px 6px' }}>
-        {INV_SORTS.map(id => <button key={id} className="chip" aria-pressed={sort === id} onClick={() => setSort(id)}>{t(`inv.sort.${id}`)}</button>)}
+        {INV_SORTS[kind].map(id => <button key={id} className="chip" aria-pressed={sort === id} onClick={() => setSort(id)}>{t(`inv.sort.${id}`)}</button>)}
       </div>
-      <p className="hint" style={{ margin: '0 2px 12px' }}>{t('market.estimate')}</p>
-      {rows.length === 0 ? <Empty title={t('market.none')}>{t('price.noSignal')}</Empty> : (
+      <p className="hint" style={{ margin: '0 2px 12px' }}>{kind === 'res' ? t('market.estimate') : t('inv.nftHint')}</p>
+
+      {kind === 'nft' && nftLoading && !nfts.length ? <div className="skeleton" style={{ height: 240 }} /> : rows.length === 0 ? (
+        <Empty title={t('market.none')}>{kind === 'nft' && sort === 'value' ? t('nft.noneMine') : t('price.noSignal')}</Empty>
+      ) : (
         <div className="list">
           {rows.map(r => (
-            <div className="list-row" key={r.name}>
-              <div className="thumb"><ItemImg name={r.name} size={28} /></div>
+            <div className="list-row" key={r.key ?? r.name}>
+              <div className="thumb">{r.key ? <Thumb item={r} /> : <ItemImg name={r.name} size={28} />}</div>
               <div className="grow" style={{ minWidth: 0 }}>
-                <div className="title ellipsis">{r.name}</div>
+                <div className="title ellipsis">{r.key && r.qty > 1 ? `${num(r.qty)} × ` : ''}{r.name}</div>
                 <div className="sub row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                  <span>{num(r.qty)} × {flower(r.unit)}</span>
+                  {!r.key && <span>{num(r.qty)} × {flower(r.unit)}</span>}
                   <Delta v={r.stats.change24} label={r.stats.label24} /><Delta v={r.stats.change7} label={r.stats.label7} />
+                  {r.key && <span className="ellipsis">{r.boost ? `⚡ ${r.boost}` : t(`nft.kind.${r.kind}`)}</span>}
                 </div>
               </div>
               <div className="val">
-                <strong>{flower(r.total)}</strong>
-                <small>{rate ? money(r.total * rate, currency) : ''}</small>
+                <strong>{r.unit > 0 ? flower(r.total) : '—'}</strong>
+                <small>{r.unit > 0 ? (rate ? money(r.total * rate, currency) : '') : t('nft.noFloor')}</small>
               </div>
             </div>
           ))}
         </div>
       )}
-      <NftHoldings farm={farm} rate={rate} currency={currency} history={history} />
     </>
   );
 }

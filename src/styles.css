@@ -581,3 +581,12 @@ a.pref:hover .title { color: var(--sun); }
 .detected-options { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .detected-options .ready-chip { max-width: none; border-color: rgba(110, 200, 255, .3); }
 .detected-options .ready-chip b { color: var(--sky); }
+
+/* Inventário: patrimônio total (recursos + NFTs) */
+.worth { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 16px; background: linear-gradient(135deg, rgba(255, 200, 61, .12), transparent 60%), var(--card); }
+.worth small { display: block; font-size: 11.5px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.worth strong { display: block; font: 800 26px/1.15 var(--pixel); margin-top: 2px; }
+.worth strong i { font: 700 12px/1 var(--body); font-style: normal; color: var(--text-2); }
+.worth .grow > span { font-size: 13px; color: var(--text-2); }
+.worth-split { display: grid; gap: 4px; font-size: 13px; color: var(--text-2); text-align: right; }
+.worth-split b { color: var(--text); font-weight: 800; }
