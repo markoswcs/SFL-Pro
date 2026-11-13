@@ -3,6 +3,7 @@
 // Modelo antigo: o jogo grava o início já adiantado pelos boosts, então pronto = início + tempo base.
 // Modelo novo: o nó guarda `baseDurationMs`; usamos início + baseDurationMs. Boosts temporários
 // podem adiantar alguns minutos, o que a próxima leitura da fazenda corrige.
+import { computeReadyAt, cropFertiliserWindows, farmWindows, fruitFertiliserWindows, greenhouseFertiliserWindows } from './boost-windows.js';
 import { cropYield, fruitYield, yieldContext } from './yields.js';
 
 const H = 3600_000;
@@ -97,10 +98,12 @@ export function hiveFullAt(hive) {
   return null;
 }
 
-function nodeReadyAt(inner, timeKey, baseMs) {
+function nodeReadyAt(inner, timeKey, baseMs, windows = []) {
   const start = inner?.[timeKey];
   if (!start) return null;
-  if (inner.baseDurationMs !== undefined) return start + inner.baseDurationMs;
+  // Modelo novo: `baseDurationMs` é o trabalho que falta; boosts temporários (Power Hour,
+  // Sunshower, totens, shrines…) fazem esse trabalho andar mais rápido enquanto estão ativos.
+  if (inner.baseDurationMs !== undefined) return computeReadyAt(start, inner.baseDurationMs, windows);
   return start + baseMs;
 }
 
@@ -114,6 +117,7 @@ export function extractTimers(farm, now = Date.now()) {
   if (!farm) return [];
   const out = [];
   const yields = yieldContext(farm, now);
+  const W = farmWindows(farm);
   const push = (category, name, readyAt, key, image = name, startedAt = null, amount = 1, meta = null) => {
     if (!readyAt || !Number.isFinite(readyAt)) return;
     out.push({ key: `${category}:${key}`, category, name, image: image ?? name, readyAt, startedAt, count: 1, amount, meta });
@@ -123,13 +127,14 @@ export function extractTimers(farm, now = Date.now()) {
     const c = plot?.crop;
     if (!c?.name || !placed(plot)) continue;
     const ms = CROP_MS[c.name] ?? 0;
-    push('crops', c.name, nodeReadyAt(c, 'plantedAt', ms), id, c.name, c.plantedAt, c.amount ?? cropYield(yields, c.name, plot, ms));
+    push('crops', c.name, nodeReadyAt(c, 'plantedAt', ms, [...W.crops, ...cropFertiliserWindows(plot.fertiliser)]), id, c.name, c.plantedAt, c.amount ?? cropYield(yields, c.name, plot, ms));
   }
 
   for (const [id, pot] of Object.entries(farm.greenhouse?.pots ?? {})) {
     const p = pot?.plant;
     if (!p?.name) continue;
-    push('greenhouse', p.name, nodeReadyAt(p, 'plantedAt', GREENHOUSE_MS[p.name] ?? 0), id, p.name, p.plantedAt);
+    const ghWindows = [...W.greenhouse.shared, ...(p.name === 'Grape' ? W.greenhouse.fruits : W.greenhouse.crops), ...greenhouseFertiliserWindows(pot.fertiliser)];
+    push('greenhouse', p.name, nodeReadyAt(p, 'plantedAt', GREENHOUSE_MS[p.name] ?? 0, ghWindows), id, p.name, p.plantedAt);
   }
 
   for (const [id, patch] of Object.entries(farm.fruitPatches ?? {})) {
@@ -137,7 +142,7 @@ export function extractTimers(farm, now = Date.now()) {
     if (!f?.name || !placed(patch)) continue;
     const start = f.harvestedAt || f.plantedAt;
     const ms = FRUIT_MS[f.name] ?? 0;
-    const readyAt = f.baseDurationMs !== undefined ? start + f.baseDurationMs : start + ms;
+    const readyAt = f.baseDurationMs !== undefined ? computeReadyAt(start, f.baseDurationMs, [...W.fruits, ...fruitFertiliserWindows(patch.fertiliser)]) : start + ms;
     push('fruits', f.name, readyAt, id, f.name, start, f.amount ?? fruitYield(yields, f.name, patch));
   }
 
@@ -148,25 +153,25 @@ export function extractTimers(farm, now = Date.now()) {
     const ms = FLOWER_SEED_MS[FLOWER_TYPE_TO_SEED[type]] ?? 24 * H;
     // Os críticos já vêm sorteados no plantio (criticalHit); cada um rende +1 flor na colheita.
     const crits = Object.values(f.criticalHit ?? {}).filter(Boolean).length;
-    push('flowers', f.name, nodeReadyAt(f, 'plantedAt', ms), id, f.name, f.plantedAt, f.amount ?? 1 + crits);
+    push('flowers', f.name, nodeReadyAt(f, 'plantedAt', ms, W.flowers), id, f.name, f.plantedAt, f.amount ?? 1 + crits);
   }
 
   for (const [id, tree] of Object.entries(farm.trees ?? {})) {
     if (!placed(tree)) continue;
-    push('trees', 'Wood', nodeReadyAt(tree.wood, 'choppedAt', RESOURCE_MS.trees), id, 'Wood', tree.wood?.choppedAt);
+    push('trees', 'Wood', nodeReadyAt(tree.wood, 'choppedAt', RESOURCE_MS.trees, W.trees), id, 'Wood', tree.wood?.choppedAt);
   }
 
   const rocks = [['stones', 'Stone'], ['iron', 'Iron'], ['gold', 'Gold'], ['crimstones', 'Crimstone'], ['sunstones', 'Sunstone']];
   for (const [field, name] of rocks) {
     for (const [id, rock] of Object.entries(farm[field] ?? {})) {
       if (!placed(rock)) continue;
-      push(field, name, nodeReadyAt(rock.stone, 'minedAt', RESOURCE_MS[field]), id, name, rock.stone?.minedAt);
+      push(field, name, nodeReadyAt(rock.stone, 'minedAt', RESOURCE_MS[field], W[field]), id, name, rock.stone?.minedAt);
     }
   }
 
   for (const [id, reserve] of Object.entries(farm.oilReserves ?? {})) {
     if (!placed(reserve)) continue;
-    push('oilReserves', 'Oil', nodeReadyAt(reserve.oil, 'drilledAt', RESOURCE_MS.oilReserves), id, 'Oil', reserve.oil?.drilledAt);
+    push('oilReserves', 'Oil', nodeReadyAt(reserve.oil, 'drilledAt', RESOURCE_MS.oilReserves, W.oilReserves), id, 'Oil', reserve.oil?.drilledAt);
   }
 
   for (const [id, node] of Object.entries(farm.saltFarm?.nodes ?? {})) {
@@ -180,11 +185,13 @@ export function extractTimers(farm, now = Date.now()) {
   const animals = ['henHouse', 'barn', 'pigpen'].flatMap(b => Object.values(farm[b]?.animals ?? {}));
   for (const a of animals) {
     if (!a?.type || !a.awakeAt) continue;
-    push('animals', a.type, a.awakeAt, a.id, a.type, a.asleepAt);
-    if (a.asleepAt && a.awakeAt > Math.max(a.asleepAt, now)) {
-      const third = (a.awakeAt - a.asleepAt) / 3;
+    // No modelo novo, awakeAt é só a previsão feita ao dormir; o jogo recalcula com as shrines.
+    const awakeAt = a.baseDurationMs !== undefined && a.asleepAt ? computeReadyAt(a.asleepAt, a.baseDurationMs, W.animals[a.type] ?? []) : a.awakeAt;
+    push('animals', a.type, awakeAt, a.id, a.type, a.asleepAt);
+    if (a.asleepAt && awakeAt > Math.max(a.asleepAt, now)) {
+      const third = (awakeAt - a.asleepAt) / 3;
       const loveAt = Math.max(a.asleepAt + third, (a.lovedAt ?? 0) + third);
-      if (loveAt < a.awakeAt) push('animalLove', a.type, loveAt, a.id, a.type, a.asleepAt, 1, { item: a.item });
+      if (loveAt < awakeAt) push('animalLove', a.type, loveAt, a.id, a.type, a.asleepAt, 1, { item: a.item });
     }
   }
 
