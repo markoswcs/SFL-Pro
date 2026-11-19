@@ -462,13 +462,17 @@ function PositionSheet({ pos, m, cur, curUsd, history, names, taxRate, goal, onC
 
 const GOALS = [0.05, 0.1, 0.2, 0.3];
 
-export function Buys({ farm, land, prices, settings, rate, currency, exchange, adding, onAdding }) {
-  const t = useT();
+/**
+ * Carteira: compras (ofertas aceitas, compras detectadas e as anotadas à mão) agrupadas em posições
+ * com preço médio, preço atual e as contas de lucro. Usado pela Carteira e pela aba Lucro.
+ * Também manda um resumo das posições junto das preferências, para o servidor avisar quando
+ * a venda atinge a meta de lucro com o preço médio de verdade.
+ */
+export function usePositions({ farm, land, prices, settings, exchange }) {
   const { data: server, error } = useResource(`purchases:${settings.farmId}`, () => farmPurchases(settings.farmId), { ttl: 120_000, enabled: !!settings.farmId });
   const { data: history } = usePriceHistory();
   const { data: nfts } = useNfts();
   const priceOf = usePriceLookup(prices, nfts);
-  const [open, setOpen] = useState(null);
   const tax = useMemo(() => resourceTax(farm, land), [farm, land]);
   const goal = settings.sellGoal ?? 0.1;
   const curUsd = Number(exchange?.sfl?.usd ?? 0);
@@ -501,12 +505,29 @@ export function Buys({ farm, land, prices, settings, rate, currency, exchange, a
     return { ...p, nft, price, taxRate, m: positionMath(p, price, curUsd, taxRate, goal) };
   }), [confirmed, settings.positions, priceOf, tax, curUsd, goal]);
 
+
+  useEffect(() => {
+    const compact = positions.filter(p => p.qty > 0 && p.avgUnit > 0)
+      .map(p => ({ item: p.item, qty: Math.round(p.qty * 1000) / 1000, avg: Math.round(p.avgUnit * 1e6) / 1e6, key: p.nft?.key ?? null }));
+    const cur = settings.prefs?.positions ?? [];
+    if (JSON.stringify(cur) === JSON.stringify(compact) && settings.prefs?.sellGoal === goal) return;
+    setSettings(st => ({ prefs: { ...st.prefs, positions: compact, sellGoal: goal } }));
+  }, [positions, goal]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return { server, error, history, nfts, priceOf, tax, goal, curUsd, txs, pending, confirmed, positions };
+}
+
+export function Buys({ farm, land, prices, settings, rate, currency, exchange, adding, onAdding }) {
+  const t = useT();
+  const [open, setOpen] = useState(null);
+  const { error, history, nfts, priceOf, tax, goal, curUsd, pending, positions } = usePositions({ farm, land, prices, settings, exchange });
+
   const priced = positions.filter(p => p.price > 0);
   const total = priced.reduce((a, p) => ({
     cost: a.cost + p.m.cost, net: a.net + p.m.net,
     costUsd: a.costUsd + (p.m.costUsd ?? p.m.cost * curUsd), netUsd: a.netUsd + (p.m.netUsd ?? p.m.net * curUsd),
   }), { cost: 0, net: 0, costUsd: 0, netUsd: 0 });
-  const names = useMemo(() => [...Object.keys(prices?.p2p ?? {}), ...nfts.map(x => x.name)].sort(), [prices, nfts]);
+  const names = useMemo(() => [...new Set([...Object.keys(prices?.p2p ?? {}), ...nfts.map(x => x.name)])].sort(), [prices, nfts]);
   const save = p => { setSettings(s => ({ purchases: [...(s.purchases ?? []), { id: `m${Date.now()}`, ...p }] })); onAdding(null); };
   const openPos = open && positions.find(p => p.item === open);
 

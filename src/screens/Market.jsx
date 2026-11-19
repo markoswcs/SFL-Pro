@@ -6,8 +6,9 @@ import { setSettings } from '../lib/store.js';
 import { locale, useT } from '../i18n.js';
 import { Empty, ItemImg, Notice } from '../ui.jsx';
 import { Buys, Inventory, Prices } from './MarketPrices.jsx';
+import Profit from './MarketProfit.jsx';
 
-const TABS = ['prices', 'buys', 'inventory', 'sales', 'news'];
+const TABS = ['profit', 'prices', 'buys', 'inventory', 'sales', 'news'];
 
 
 function Sales({ farm, rate, currency, lang }) {
@@ -141,6 +142,7 @@ export default function Market({ data, settings }) {
           <button key={id} role="tab" className="chip" aria-selected={tab === id} aria-pressed={tab === id} onClick={() => setTab(id)}>{t(`market.${id}`)}</button>
         ))}
       </div>
+      {tab === 'profit' && <Profit data={data} settings={settings} />}
       {tab === 'prices' && <Prices prices={data.prices} rate={rate} currency={settings.currency} favorites={settings.favorites} farm={data.farm} land={data.land} onBuy={name => { setAdding(name); setTab('buys'); }} />}
       {tab === 'buys' && <Buys farm={data.farm} land={data.land} prices={data.prices} settings={settings} rate={rate} currency={settings.currency} exchange={data.exchange} adding={adding} onAdding={setAdding} />}
       {tab === 'inventory' && <Inventory farm={data.farm} prices={data.prices} rate={rate} currency={settings.currency} />}

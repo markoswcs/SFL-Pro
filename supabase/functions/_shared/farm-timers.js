@@ -5,6 +5,7 @@
 // podem adiantar alguns minutos, o que a próxima leitura da fazenda corrige.
 import { computeReadyAt, cropFertiliserWindows, farmWindows, fruitFertiliserWindows, greenhouseFertiliserWindows } from './boost-windows.js';
 import { cropYield, fruitYield, yieldContext } from './yields.js';
+import { strategyText } from './strategy.js';
 
 const H = 3600_000;
 const MIN = 60_000;
@@ -69,6 +70,9 @@ export const CATEGORIES = [
   { id: 'floatingIsland', label: 'Floating Island', en: 'Floating Island', image: 'Love Charm' },
   { id: 'sales', label: 'Vendas no mercado', en: 'Market sales', image: 'Flower' },
   { id: 'offers', label: 'Ofertas de compra aceitas', en: 'Accepted buy offers', image: 'Flower' },
+  { id: 'sellSignal', label: 'Hora de vender (preço acima da média)', en: 'Time to sell (price above average)', image: 'Flower' },
+  { id: 'buySignal', label: 'Hora de comprar (itens que você segue)', en: 'Time to buy (items you follow)', image: 'Flower' },
+  { id: 'calendar', label: 'Lua Cheia e Entrega Dupla', en: 'Full Moon and Double Delivery', image: 'Duskberry' },
 ];
 
 export const CATEGORY_BY_ID = Object.fromEntries(CATEGORIES.map(c => [c.id, c]));
@@ -261,7 +265,7 @@ export function extractTimers(farm, now = Date.now()) {
 }
 
 /** Não somam com outros: cada janela da ilha tem a própria hora de fechar e cada venda/oferta vira um aviso. */
-const SOLO = new Set(['floatingIsland', 'sales', 'offers']);
+const SOLO = new Set(['floatingIsland', 'sales', 'offers', 'sellSignal', 'buySignal', 'calendar']);
 
 /** Agrupa timers da mesma categoria/item que ficam prontos com até 60s de diferença. */
 export function groupTimers(timers, windowMs = 60_000) {
@@ -327,6 +331,7 @@ export function notificationText(group, lang = 'pt', tz = 'America/Sao_Paulo') {
   const time = ts => {
     try { return new Date(ts).toLocaleTimeString(en ? 'en-US' : 'pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: tz }); } catch { return new Date(ts).toISOString().slice(11, 16); }
   };
+  if (group.category === 'sellSignal' || group.category === 'buySignal' || group.category === 'calendar') return strategyText(group, lang, tz);
   switch (group.category) {
     case 'daily':
       return en ? { title: 'Daily chest unlocked!', body: 'Open it before the day resets.' } : { title: 'Baú diário liberado!', body: 'Abra antes de virar o dia.' };
@@ -377,4 +382,4 @@ export function notificationText(group, lang = 'pt', tz = 'America/Sao_Paulo') {
 }
 
 /** Uma notificação por item: um aviso novo de "Wood" substitui o anterior em vez de empilhar. */
-export const displayTag = g => (g.category === 'sales' || g.category === 'offers' ? `${g.category}:${g.keys?.[0] ?? g.key}` : `${g.category}:${g.name}`);
+export const displayTag = g => (g.category === 'sales' || g.category === 'offers' || g.category === 'calendar' ? `${g.category}:${g.keys?.[0] ?? g.key}` : `${g.category}:${g.name}`);

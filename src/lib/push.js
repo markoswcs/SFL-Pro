@@ -68,6 +68,8 @@ export const nftHistory = key => callServer({ action: 'nftHistory', key });
 
 /** Ofertas de compra aceitas que o servidor copiou desta fazenda. */
 export const farmPurchases = farmId => callServer({ action: 'purchases', farmId }).then(d => d.purchases ?? []);
+// Vendas do mercado guardadas pelo servidor.
+export const farmSales = farmId => callServer({ action: 'sales', farmId }).then(d => d.sales ?? []);
 
 export async function sendTest(endpoint) {
   return callServer({ action: 'test', endpoint });

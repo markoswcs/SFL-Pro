@@ -162,6 +162,16 @@ Deno.serve(async req => {
         return json({ ok: true, purchases: data ?? [] });
       }
 
+      case 'sales': {
+        // Vendas do mercado guardadas pelo servidor (o jogo apaga o anúncio depois da coleta).
+        const farmId = Number(String(body.farmId ?? '').replace(/\D/g, ''));
+        if (!farmId) return json({ error: 'Informe o Farm ID.' }, 400);
+        const { data, error } = await db.from('sflpro_sales').select('listing_id, item, qty, sfl, tax, sold_at')
+          .eq('farm_id', farmId).order('sold_at', { ascending: false }).limit(500);
+        if (error) return json({ ok: true, sales: [], missing: true }); // migração 20261118000000 ainda não aplicada
+        return json({ ok: true, sales: data ?? [] });
+      }
+
       default:
         return json({ error: 'Ação desconhecida' }, 400);
     }

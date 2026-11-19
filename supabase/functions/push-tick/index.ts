@@ -11,14 +11,17 @@ const SUMMARY_AFTER = 6; // mais que isso na mesma rodada vira uma notificação
 const WINDOW_MS = 60 * 60_000; // avisa o que ficou pronto na última hora (cobre falhas temporárias da API)
 const TICK_MS = 10_000; // intervalo do cron
 // Vendas e a ilha flutuante sempre chegam sozinhas: o valor recebido e a hora de fechar importam.
-const NEVER_SUMMARIZE = new Set(['sales', 'offers', 'floatingIsland']);
+const NEVER_SUMMARIZE = new Set(['sales', 'offers', 'floatingIsland', 'sellSignal', 'buySignal', 'calendar']);
 const PRICES_EVERY_MS = 30 * 60_000; // uma foto dos preços do mercado a cada 30 min
 const NFT_EVERY_MS = 2 * 3600_000; // os floors dos NFTs (~850 itens) a cada 2 h
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
+// Vendas, ofertas e avisos de estratégia: a chave já identifica o aviso (o de vender leva o dia,
+// então sai no máximo uma vez por item por dia, mesmo com o preço mudando a cada foto).
+const KEYED = new Set(['sales', 'offers', 'sellSignal', 'buySignal', 'calendar']);
 const tagOf = (g: { category: string; name: string; readyAt: number; keys?: string[] }) =>
-  g.category === 'sales' || g.category === 'offers' ? `${g.category}:${g.keys?.[0]}` : `${g.category}:${g.name}:${Math.round(g.readyAt / 60_000)}`;
+  KEYED.has(g.category) ? `${g.keys?.[0]}` : `${g.category}:${g.name}:${Math.round(g.readyAt / 60_000)}`;
 
 /** Guarda os preços P2P da sfl.world para o app mostrar o que valorizou e desvalorizou. */
 async function snapshotPrices() {
@@ -171,7 +174,8 @@ async function dispatch() {
       for (const g of solo) {
         const { title, body } = notificationText(g, lang, tz);
         // O ícone é a arte do próprio item (pedra, trigo, vaca…); o aparelho baixa a imagem ao exibir.
-        const url = g.category === 'sales' ? '/?tab=market&view=sales' : g.category === 'offers' ? '/?tab=market&view=buys' : '/?tab=farm';
+        const url = g.category === 'sales' ? '/?tab=market&view=sales' : g.category === 'offers' ? '/?tab=market&view=buys'
+          : g.category === 'sellSignal' || g.category === 'buySignal' || g.category === 'calendar' ? '/?tab=market&view=profit' : '/?tab=farm';
         const ok = await sendPush(device, { title, body, icon: itemImage(g.image), tag: displayTag(g), url, timestamp: g.readyAt });
         track([g], ok);
         if (ok) sent++;

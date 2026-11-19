@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { registerSW } from 'virtual:pwa-register';
 import { CATEGORIES, extractTimers, groupTimers } from '../supabase/functions/_shared/farm-timers.js';
 import { itemImage } from '../supabase/functions/_shared/item-image.js';
 import { useGameData, useNow } from './lib/hooks.js';
-import { enablePush, scheduleLocal } from './lib/push.js';
+import { enablePush, scheduleLocal, syncPrefs } from './lib/push.js';
 import { farmLink, SUPPORT } from './lib/farmInfo.js';
 import { setSettings, useSettings } from './lib/store.js';
 import { useT } from './i18n.js';
@@ -122,6 +122,17 @@ function Shell() {
   const [support, setSupport] = useState(false);
   const data = useGameData({ farmId: settings.farmId });
   const now = useNow(15_000);
+
+  // Envia as preferências ao servidor um instante depois da última mudança, venha de qual tela vier
+  // (Alertas, aba Lucro, ou a Carteira atualizando as posições).
+  const prefsKey = JSON.stringify(settings.prefs);
+  const firstPrefs = useRef(true);
+  useEffect(() => {
+    if (firstPrefs.current) { firstPrefs.current = false; return; }
+    if (!settings.pushEndpoint) return;
+    const timer = setTimeout(() => syncPrefs(settings.pushEndpoint, settings.prefs).catch(e => console.error('preferências não sincronizaram', e)), 700);
+    return () => clearTimeout(timer);
+  }, [prefsKey, settings.pushEndpoint]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { document.documentElement.lang = settings.lang === 'en' ? 'en' : 'pt-BR'; }, [settings.lang]);
   useEffect(() => {

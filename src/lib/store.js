@@ -19,6 +19,7 @@ const DEFAULTS = {
   txEdits: {}, // correções em ofertas aceitas (vêm do jogo, não da pessoa)
   txHidden: {},
   tourDone: false,
+  strategy: null, // { start, balance }: desde quando a aba Lucro conta o resultado
 };
 
 function load() {

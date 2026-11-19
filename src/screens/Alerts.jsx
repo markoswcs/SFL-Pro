@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CATEGORIES, CROP_MS, FRUIT_MS, GREENHOUSE_MS, categoryLabel, extractTimers } from '../../supabase/functions/_shared/farm-timers.js';
-import { disablePush, enablePush, getSubscription, isIOS, isStandalone, pushSupported, sendTest, syncPrefs } from '../lib/push.js';
+import { disablePush, enablePush, getSubscription, isIOS, isStandalone, pushSupported, sendTest } from '../lib/push.js';
 import { setSettings } from '../lib/store.js';
 import { useT } from '../i18n.js';
 import { Icon, ItemImg, Notice, Switch, useToast } from '../ui.jsx';
@@ -14,6 +14,9 @@ const KNOWN = {
   animalLove: ['Chicken', 'Cow', 'Sheep', 'Pig'],
   // Vendas: uma chave só, para não listar cada item já vendido.
   sales: [],
+  sellSignal: [],
+  buySignal: [],
+  calendar: [],
 };
 
 // As categorias em blocos, para a lista de 24 interruptores não virar um paredão.
@@ -22,7 +25,7 @@ const GROUPS = [
   ['resources', ['trees', 'stones', 'iron', 'gold', 'crimstones', 'sunstones', 'oilReserves', 'salt']],
   ['animals', ['animals', 'animalLove', 'beehives']],
   ['production', ['composters', 'cooking', 'cropMachine', 'agingShed', 'craftingBox']],
-  ['events', ['daily', 'floatingIsland', 'sales', 'offers']],
+  ['events', ['daily', 'floatingIsland', 'sales', 'offers', 'sellSignal', 'buySignal', 'calendar']],
 ];
 
 function CategoryRow({ cat, prefs, names, lang, onToggleCat, onToggleItem }) {
@@ -68,18 +71,11 @@ export default function Alerts({ data, settings }) {
 
   useEffect(() => { getSubscription().then(s => setSubscribed(!!s)).catch(() => {}); }, []);
 
-  // Envia as preferências ao servidor um instante depois da última mudança.
-  const first = useRef(true);
-  useEffect(() => {
-    if (first.current) { first.current = false; return; }
-    if (!subscribed || !settings.pushEndpoint) return;
-    const timer = setTimeout(() => syncPrefs(settings.pushEndpoint, prefs).catch(e => setError(e.message)), 700);
-    return () => clearTimeout(timer);
-  }, [prefs, subscribed, settings.pushEndpoint]);
+  // As preferências vão ao servidor pelo App (usePrefsSync), de qualquer tela.
 
   const names = useMemo(() => {
     const present = {};
-    for (const x of extractTimers(data.farm)) if (x.category !== 'sales') (present[x.category] ??= new Set()).add(x.name);
+    for (const x of extractTimers(data.farm)) if (x.category !== 'sales' && x.category !== 'sellSignal' && x.category !== 'calendar') (present[x.category] ??= new Set()).add(x.name);
     return Object.fromEntries(CATEGORIES.map(c => [c.id, [...new Set([...(KNOWN[c.id] ?? []), ...(present[c.id] ?? [])])]]));
   }, [data.farm]);
 
