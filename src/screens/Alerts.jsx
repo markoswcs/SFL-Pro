@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CATEGORIES, CROP_MS, FRUIT_MS, GREENHOUSE_MS, categoryLabel, extractTimers } from '../../supabase/functions/_shared/farm-timers.js';
+import { CATEGORIES, CROP_MS, FRUIT_MS, GREENHOUSE_MS, OPT_IN, categoryLabel, extractTimers } from '../../supabase/functions/_shared/farm-timers.js';
 import { disablePush, enablePush, getSubscription, isIOS, isStandalone, pushSupported, sendTest } from '../lib/push.js';
 import { setSettings } from '../lib/store.js';
 import { useT } from '../i18n.js';
@@ -32,7 +32,7 @@ function CategoryRow({ cat, prefs, names, lang, onToggleCat, onToggleItem }) {
   const t = useT();
   const label = categoryLabel(cat.id, lang);
   const [open, setOpen] = useState(false);
-  const on = prefs.categories?.[cat.id] !== false;
+  const on = OPT_IN.has(cat.id) ? prefs.optIn?.[cat.id] === true : prefs.categories?.[cat.id] !== false;
   const offItems = names.filter(n => prefs.items?.[`${cat.id}:${n}`] === false).length;
   return (
     <>
@@ -80,13 +80,14 @@ export default function Alerts({ data, settings }) {
   }, [data.farm]);
 
   const updatePrefs = fn => setSettings(s => ({ prefs: fn(s.prefs) }));
-  const toggleCat = (id, v) => updatePrefs(p => ({ ...p, categories: { ...p.categories, [id]: v } }));
+  const toggleCat = (id, v) => updatePrefs(p => (OPT_IN.has(id) ? { ...p, optIn: { ...p.optIn, [id]: v } } : { ...p, categories: { ...p.categories, [id]: v } }));
   const toggleItem = (cat, name, v) => updatePrefs(p => {
     const items = { ...p.items };
     if (v) delete items[`${cat}:${name}`]; else items[`${cat}:${name}`] = false;
     return { ...p, items };
   });
-  const setAll = v => updatePrefs(p => ({ ...p, categories: Object.fromEntries(CATEGORIES.map(c => [c.id, v])), items: v ? {} : p.items }));
+  // "Ligar tudo" não liga os avisos do Lucro (a pessoa ativa de propósito); "Desligar tudo" desliga também.
+  const setAll = v => updatePrefs(p => ({ ...p, categories: Object.fromEntries(CATEGORIES.map(c => [c.id, v])), items: v ? {} : p.items, optIn: v ? p.optIn ?? {} : {} }));
 
   async function turnOn() {
     setError(null);

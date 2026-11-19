@@ -38,6 +38,17 @@ const SEED_LIMIT = 10;
 const MIN_LOT_NET = 1; // abaixo de 1 FLOWER líquido por lote não vale o anúncio
 const MIN_SPAN = 12 * H; // sinal de preço só com pelo menos 12 h de histórico
 
+// Critérios de oportunidade TOP: o aviso só sai quando vale a pena de verdade.
+// O % de lucro (acima/abaixo da média, ou margem na revenda) é escolhido na aba Lucro; padrão 15%.
+export const DEFAULT_PROFIT = 0.15;
+export const PROFIT_OPTIONS = [0.1, 0.15, 0.2, 0.3, 0.5];
+export const TOP = {
+  sellExtra: 1, // e vender agora rende pelo menos 1 FLOWER a mais que vender na média
+  sellTotal: 5, // e o estoque todo vale pelo menos 5 FLOWER líquido
+  nftExtra: 2, // NFT acima da média rende pelo menos 2 FLOWER a mais
+  targetProfit: 1, // compra que bateu a meta com pelo menos 1 FLOWER de lucro
+};
+
 /** Média, máximo e mínimo dos últimos 7 dias de cada item, a partir de { t, items }. */
 export function weekStats(history, now = Date.now()) {
   const t = history?.t ?? [];
@@ -59,12 +70,12 @@ export function weekStats(history, now = Date.now()) {
 
 /**
  * Situação de venda de um item: acima da média (hora de vender), na média, ou abaixo (segurar).
- * `sell` segue o mesmo critério dos sinais da aba Preços: 8% acima da média ou perto da máxima.
+ * `min` é o % de lucro escolhido na aba Lucro: o preço precisa estar pelo menos isso acima da média.
  */
-export function sellSignal(price, stats) {
+export function sellSignal(price, stats, min = DEFAULT_PROFIT) {
   if (!(price > 0) || !stats || stats.span < MIN_SPAN || !(stats.avg7 > 0)) return { above: null, sell: false, hold: false };
   const above = price / stats.avg7 - 1;
-  const sell = above >= 0.08 || (stats.max7 > stats.avg7 * 1.05 && price >= stats.max7 * 0.97);
+  const sell = above >= min;
   return { above, sell, hold: above <= -0.08 };
 }
 
@@ -124,7 +135,7 @@ export function fullMoonPlan(farm, p2p, stats, taxRate) {
  * Estoque que pode virar FLOWER: cada recurso negociável no inventário, o lote sugerido
  * (limite do anúncio), o líquido do lote e do total, e o sinal de preço.
  */
-export function stockPlan(farm, p2p, stats, taxRate) {
+export function stockPlan(farm, p2p, stats, taxRate, min = DEFAULT_PROFIT) {
   const rows = [];
   for (const [name, limit] of Object.entries(TRADE_LIMITS)) {
     const qty = inv(farm, name);
@@ -133,8 +144,12 @@ export function stockPlan(farm, p2p, stats, taxRate) {
     const lot = Math.min(Math.floor(qty), limit);
     const total = qty * price * (1 - taxRate);
     if (total < MIN_LOT_NET) continue;
-    const signal = sellSignal(price, stats?.[name]);
-    rows.push({ name, qty, price, avg7: stats?.[name]?.avg7 ?? null, lot, lots: Math.ceil(qty / limit), lotNet: lot * price * (1 - taxRate), total, ...signal });
+    const signal = sellSignal(price, stats?.[name], min);
+    const avg7 = stats?.[name]?.avg7 ?? null;
+    // Quanto vender agora rende a mais do que vender pelo preço médio de 7 dias.
+    const extra = avg7 ? qty * (price - avg7) * (1 - taxRate) : null;
+    const top = signal.sell && extra >= TOP.sellExtra && total >= TOP.sellTotal;
+    rows.push({ name, qty, price, avg7, lot, lots: Math.ceil(qty / limit), lotNet: lot * price * (1 - taxRate), total, extra, ...signal, top });
   }
   return rows.sort((a, b) => Number(b.sell) - Number(a.sell) || b.total - a.total);
 }
@@ -146,7 +161,7 @@ export function strategy(farm, p2p, history, taxRate, now = Date.now()) {
   return {
     stock,
     stockTotal: stock.reduce((s, r) => s + r.total, 0),
-    sellNow: stock.filter(r => r.sell),
+    sellNow: stock.filter(r => r.top),
     events: calendarEvents(farm, now),
     fullMoon: fullMoonPlan(farm, p2p, stats, taxRate),
     taxRate,
@@ -156,8 +171,6 @@ export function strategy(farm, p2p, history, taxRate, now = Date.now()) {
 const day = ms => new Date(ms).toISOString().slice(0, 10);
 
 export const NFT_TAX = 0.1;
-const BUY_MARGIN = 0.05; // comprando agora e vendendo na média, sobra pelo menos 5% depois da taxa
-const NFT_DIP = 0.08;
 const MAX_SELL_ALERTS = 3; // avisos de estoque por dia (o resto aparece na aba Lucro)
 
 /** Anúncio aberto (ainda não vendido) deste item: a pessoa já agiu sobre o aviso de venda. */
@@ -169,17 +182,19 @@ export const openOffer = (farm, name) => Object.values(farm?.trades?.offers ?? {
 export const holding = (farm, name, wearable = false) => Number((wearable ? farm?.wardrobe : farm?.inventory)?.[name] ?? 0) || 0;
 
 /** Situação de compra de um recurso: o quanto sobra comprando agora e revendendo na média. */
-export function buySignal(price, stats, taxRate) {
+export function buySignal(price, stats, taxRate, min = DEFAULT_PROFIT) {
   if (!(price > 0) || !stats || stats.span < MIN_SPAN || !(stats.avg7 > 0)) return { margin: null, buy: false };
   const margin = (stats.avg7 * (1 - taxRate) - price) / price;
-  return { margin, below: price / stats.avg7 - 1, buy: margin >= BUY_MARGIN };
+  return { margin, below: price / stats.avg7 - 1, buy: margin >= min };
 }
 
 /** Situação de compra de um NFT: floor bem abaixo da média de 7 dias. */
-export function nftBuySignal(floor, stats) {
+export function nftBuySignal(floor, stats, min = DEFAULT_PROFIT) {
   if (!(floor > 0) || !stats || stats.span < MIN_SPAN || !(stats.avg7 > 0)) return { below: null, buy: false };
   const below = floor / stats.avg7 - 1;
-  return { below, buy: below <= -NFT_DIP, margin: (stats.avg7 * (1 - NFT_TAX) - floor) / floor };
+  const margin = (stats.avg7 * (1 - NFT_TAX) - floor) / floor;
+  // Floor pelo menos `min` abaixo da média e, revendendo na média, ainda sobra lucro depois dos 10%.
+  return { below, buy: below <= -min && margin >= 0.05, margin };
 }
 
 /**
@@ -213,7 +228,7 @@ export function strategyTimers(farm, prices, now = Date.now(), watch = {}) {
   const stats = prices?.history ? weekStats(prices.history, now) : {};
   const p2p = prices?.p2p ?? {};
   const nft = prices?.nft ?? null;
-  const goal = watch.goal > 0 ? watch.goal : 0.1;
+  const goal = watch.goal > 0 ? watch.goal : DEFAULT_PROFIT;
   const today = prices?.at ? day(prices.at) : null;
   const sold = new Set();
 
@@ -227,7 +242,7 @@ export function strategyTimers(farm, prices, now = Date.now(), watch = {}) {
       const qty = Math.min(pos.qty, have);
       if (!(qty > 0) || !(pos.avg > 0) || openListing(farm, pos.item)) continue;
       const tg = targetFor({ qty, avg: pos.avg }, price, rate, goal);
-      if (!tg.reached || tg.profit < 0.5) continue;
+      if (!tg.reached || tg.profit < TOP.targetProfit) continue;
       sold.add(pos.item);
       add('sellSignal', pos.item, prices.at, `target:${pos.item}:${today}`, pos.item, {
         kind: 'target', price, avg: pos.avg, target: tg.target, qty, profit: tg.profit, pct: tg.pct, nft: isNft,
@@ -252,19 +267,19 @@ export function strategyTimers(farm, prices, now = Date.now(), watch = {}) {
 
   if (today && Object.keys(p2p).length) {
     // Estoque parado acima da média: só os 3 que mais rendem, para não lotar o celular.
-    const best = stockPlan(farm, p2p, stats, taxRate)
-      .filter(r => r.sell && r.total >= 2 && !sold.has(r.name) && !openListing(farm, r.name))
-      .sort((a, b) => b.total - a.total).slice(0, MAX_SELL_ALERTS);
+    const best = stockPlan(farm, p2p, stats, taxRate, goal)
+      .filter(r => r.top && !sold.has(r.name) && !openListing(farm, r.name))
+      .sort((a, b) => b.extra - a.extra).slice(0, MAX_SELL_ALERTS);
     for (const r of best) {
       add('sellSignal', r.name, prices.at, `${r.name}:${today}`, r.name, {
-        kind: 'sell', price: r.price, avg7: r.avg7, above: r.above, lot: r.lot, lotNet: r.lotNet, total: r.total, qty: Math.floor(r.qty),
+        kind: 'sell', price: r.price, avg7: r.avg7, above: r.above, extra: r.extra, lot: r.lot, lotNet: r.lotNet, total: r.total, qty: Math.floor(r.qty),
       }, Math.floor(r.qty));
     }
     // Recursos que a pessoa segue, abaixo da média.
     for (const w of watch.items ?? []) {
       if (w.key || !(w.name in TRADE_LIMITS) || openOffer(farm, w.name)) continue;
       const price = Number(p2p[w.name] ?? 0);
-      const sig = buySignal(price, stats[w.name], taxRate);
+      const sig = buySignal(price, stats[w.name], taxRate, goal);
       if (!sig.buy) continue;
       add('buySignal', w.name, prices.at, `${w.name}:${today}`, w.name, {
         kind: 'buy', price, avg7: stats[w.name].avg7, below: sig.below, margin: sig.margin, lot: TRADE_LIMITS[w.name],
@@ -280,14 +295,14 @@ export function strategyTimers(farm, prices, now = Date.now(), watch = {}) {
       if (!(have > 0) || sold.has(name) || openListing(farm, name)) continue;
       const floor = Number(nft.floors[key] ?? 0);
       const st = nft.stats?.[key];
-      const sig = sellSignal(floor, st);
-      if (!sig.sell || floor * (1 - NFT_TAX) < 1) continue;
-      add('sellSignal', name, nft.at, `nft:${key}:${nftDay}`, name, { kind: 'nftSell', price: floor, avg7: st.avg7, above: sig.above, qty: have, net: floor * (1 - NFT_TAX) });
+      const sig = sellSignal(floor, st, goal);
+      if (!sig.sell || have * (floor - st.avg7) * (1 - NFT_TAX) < TOP.nftExtra) continue;
+      add('sellSignal', name, nft.at, `nft:${key}:${nftDay}`, name, { kind: 'nftSell', price: floor, avg7: st.avg7, above: sig.above, qty: have, net: floor * (1 - NFT_TAX), extra: have * (floor - st.avg7) * (1 - NFT_TAX) });
     }
     for (const w of watch.items ?? []) {
       if (!w.key || openOffer(farm, w.name)) continue;
       const floor = Number(nft.floors[w.key] ?? 0);
-      const sig = nftBuySignal(floor, nft.stats?.[w.key]);
+      const sig = nftBuySignal(floor, nft.stats?.[w.key], goal);
       if (!sig.buy) continue;
       add('buySignal', w.name, nft.at, `nft:${w.key}:${nftDay}`, w.name, { kind: 'nftBuy', price: floor, avg7: nft.stats[w.key].avg7, below: sig.below, margin: sig.margin });
     }
@@ -313,21 +328,21 @@ export function strategyText(group, lang = 'pt', tz = 'America/Sao_Paulo') {
         : { title: `Meta de lucro batida: ${group.name}!`, body: `Vendendo ${nf(m.qty, lang, 2)} por ${nf(m.price, lang, 4)} você lucra ${nf(m.profit, lang)} FLOWER (${pc(m.pct)}) sobre seu preço médio de ${nf(m.avg, lang, 4)}.` };
     case 'nftSell':
       return en
-        ? { title: `Time to sell ${group.name}! Floor ${pc(m.above)} vs 7d average`, body: `Floor ${nf(m.price, lang)} FLOWER → ${nf(m.net, lang)} net after the 10% fee.` }
-        : { title: `Hora de vender ${group.name}! Floor ${pc(m.above)} na média de 7 dias`, body: `Floor ${nf(m.price, lang)} FLOWER → ${nf(m.net, lang)} líquido depois da taxa de 10%.` };
+        ? { title: `TOP deal: sell ${group.name} (floor ${pc(m.above)})`, body: `+${nf(m.extra, lang)} FLOWER more than at the average. Floor ${nf(m.price, lang)} FLOWER → ${nf(m.net, lang)} net after the 10% fee.` }
+        : { title: `Oportunidade TOP: vender ${group.name} (floor ${pc(m.above)})`, body: `+${nf(m.extra, lang)} FLOWER a mais que na média. Floor ${nf(m.price, lang)} FLOWER → ${nf(m.net, lang)} líquido depois da taxa de 10%.` };
     case 'buy':
       return en
-        ? { title: `Time to buy ${group.name}! ${pc(m.below)} vs 7d average`, body: `At ${nf(m.price, lang, 4)}, reselling at the ${nf(m.avg7, lang, 4)} average leaves ${pc(m.margin)} after the fee. Max ${nf(m.lot, lang, 0)} per listing.` }
-        : { title: `Hora de comprar ${group.name}! ${pc(m.below)} da média de 7 dias`, body: `A ${nf(m.price, lang, 4)}, revendendo na média (${nf(m.avg7, lang, 4)}) sobra ${pc(m.margin)} depois da taxa. Até ${nf(m.lot, lang, 0)} por anúncio.` };
+        ? { title: `TOP deal: buy ${group.name} (${pc(m.below)} vs average)`, body: `At ${nf(m.price, lang, 4)}, reselling at the ${nf(m.avg7, lang, 4)} average leaves ${pc(m.margin)} after the fee. Max ${nf(m.lot, lang, 0)} per listing.` }
+        : { title: `Oportunidade TOP: comprar ${group.name} (${pc(m.below)} da média)`, body: `A ${nf(m.price, lang, 4)}, revendendo na média (${nf(m.avg7, lang, 4)}) sobra ${pc(m.margin)} depois da taxa. Até ${nf(m.lot, lang, 0)} por anúncio.` };
     case 'nftBuy':
       return en
-        ? { title: `${group.name} is cheap! Floor ${pc(m.below)} vs 7d average`, body: `Floor ${nf(m.price, lang)} FLOWER; the 7d average is ${nf(m.avg7, lang)}.` }
-        : { title: `${group.name} barato! Floor ${pc(m.below)} da média de 7 dias`, body: `Floor ${nf(m.price, lang)} FLOWER; a média de 7 dias é ${nf(m.avg7, lang)}.` };
+        ? { title: `TOP deal: ${group.name} is cheap (floor ${pc(m.below)})`, body: `Floor ${nf(m.price, lang)} FLOWER; the 7d average is ${nf(m.avg7, lang)}.` }
+        : { title: `Oportunidade TOP: ${group.name} barato (floor ${pc(m.below)})`, body: `Floor ${nf(m.price, lang)} FLOWER; a média de 7 dias é ${nf(m.avg7, lang)}.` };
     case 'sell': {
       const pct = m.above != null ? `${m.above > 0 ? '+' : ''}${Math.round(m.above * 100)}%` : '';
       return en
-        ? { title: `Time to sell ${group.name}! ${pct} vs 7d average`, body: `List ${nf(m.lot, lang, 0)} at ${nf(m.price, lang, 4)} → ${nf(m.lotNet, lang)} FLOWER net · you have ${nf(m.qty, lang, 0)} (${nf(m.total, lang)} FLOWER)` }
-        : { title: `Hora de vender ${group.name}! ${pct} na média de 7 dias`, body: `Anuncie ${nf(m.lot, lang, 0)} por ${nf(m.price, lang, 4)} → ${nf(m.lotNet, lang)} FLOWER líquido · você tem ${nf(m.qty, lang, 0)} (${nf(m.total, lang)} FLOWER)` };
+        ? { title: `TOP deal: sell ${group.name} (${pct} vs average)`, body: `${m.extra ? `+${nf(m.extra, lang)} FLOWER more than at the average. ` : ''}List ${nf(m.lot, lang, 0)} at ${nf(m.price, lang, 4)} → ${nf(m.lotNet, lang)} FLOWER net · you have ${nf(m.qty, lang, 0)} (${nf(m.total, lang)} FLOWER)` }
+        : { title: `Oportunidade TOP: vender ${group.name} (${pct} da média)`, body: `${m.extra ? `+${nf(m.extra, lang)} FLOWER a mais que na média. ` : ''}Anuncie ${nf(m.lot, lang, 0)} por ${nf(m.price, lang, 4)} → ${nf(m.lotNet, lang)} FLOWER líquido · você tem ${nf(m.qty, lang, 0)} (${nf(m.total, lang)} FLOWER)` };
     }
     case 'fullMoonEve': {
       const unsold = (m.unsold ?? []).map(([name, qty]) => `${qty} ${name}`).join(', ');

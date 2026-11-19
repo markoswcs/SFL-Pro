@@ -11,18 +11,21 @@ const history = (items) => {
   return { t, items: Object.fromEntries(Object.entries(items).map(([k, v]) => [k, t.map(() => v)])) };
 };
 
-test('sinal de venda só acima da média e com histórico suficiente', () => {
+test('sinal de venda só acima do % de lucro escolhido e com histórico suficiente', () => {
   const stats = weekStats(history({ Corn: 1 }), NOW).Corn;
-  assert.equal(sellSignal(1.1, stats).sell, true);
-  assert.equal(sellSignal(1.02, stats).sell, false);
+  assert.equal(sellSignal(1.16, stats).sell, true); // padrão 15%
+  assert.equal(sellSignal(1.1, stats).sell, false);
+  assert.equal(sellSignal(1.1, stats, 0.1).sell, true); // escolheu 10%
+  assert.equal(sellSignal(1.25, stats, 0.3).sell, false); // escolheu 30%
   assert.equal(sellSignal(0.9, stats).hold, true);
   assert.equal(sellSignal(1.5, { ...stats, span: 2 * H }).sell, false);
 });
 
 test('sinal de compra exige lucro na revenda depois da taxa', () => {
   const stats = weekStats(history({ Corn: 1 }), NOW).Corn;
-  assert.equal(buySignal(0.85, stats, 0.075).buy, true); // 0,925/0,85 − 1 ≈ 8,8%
-  assert.equal(buySignal(0.9, stats, 0.075).buy, false); // ≈ 2,8%
+  assert.equal(buySignal(0.8, stats, 0.075).buy, true); // 0,925/0,8 − 1 ≈ 15,6%
+  assert.equal(buySignal(0.85, stats, 0.075).buy, false); // ≈ 8,8%, abaixo dos 15%
+  assert.equal(buySignal(0.85, stats, 0.075, 0.05).buy, true); // escolheu 5%
 });
 
 test('meta de lucro usa o preço médio e a taxa', () => {
@@ -66,5 +69,22 @@ test('não avisa venda de item já anunciado e reconhece o anúncio', () => {
   delete farm.trades;
   const sell = strategyTimers(farm, prices, NOW).filter(t => t.category === 'sellSignal');
   assert.equal(sell.length, 1);
-  assert.match(notificationText(groupTimers(sell)[0], 'pt').title, /Hora de vender Corn/);
+  assert.match(notificationText(groupTimers(sell)[0], 'pt').title, /Oportunidade TOP: vender Corn/);
+});
+
+test('avisos do Lucro só chegam se a pessoa ativar', async () => {
+  const { isWanted, defaultPrefs } = await import('../supabase/functions/_shared/farm-timers.js');
+  const prefs = defaultPrefs();
+  assert.equal(isWanted(prefs, 'sellSignal', 'Corn'), false);
+  assert.equal(isWanted({ ...prefs, categories: { ...prefs.categories, sellSignal: true } }, 'sellSignal', 'Corn'), false); // ligado por padrão antigo não vale
+  assert.equal(isWanted({ ...prefs, optIn: { sellSignal: true } }, 'sellSignal', 'Corn'), true);
+  assert.equal(isWanted(prefs, 'crops', 'Corn'), true);
+});
+
+test('venda TOP exige ganho real além do %', () => {
+  const stats = weekStats(history({ Corn: 1, Feather: 1 }), NOW);
+  const farm = { island: { type: 'volcano' }, inventory: { Corn: '3000', Feather: '3' } };
+  const rows = stockPlan(farm, { Corn: 1.2, Feather: 1.3 }, stats, 0.075);
+  assert.equal(rows.find(r => r.name === 'Corn').top, true);
+  assert.equal(rows.find(r => r.name === 'Feather').top, false); // +30%, mas só ~0,8 FLOWER a mais
 });

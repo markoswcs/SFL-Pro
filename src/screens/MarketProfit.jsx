@@ -2,7 +2,7 @@
 // os eventos do calendário, os avisos no celular e quanto a estratégia já rendeu.
 // O app reconhece pela própria fazenda o que foi feito: anúncio aberto, venda, oferta e compra.
 import { useMemo, useState } from 'react';
-import { buySignal, calendarEvents, fullMoonPlan, NFT_TAX, nftBuySignal, openListing, openOffer, sellSignal, stockPlan, TRADE_LIMITS, weekStats } from '../../supabase/functions/_shared/strategy.js';
+import { PROFIT_OPTIONS, TOP, buySignal, calendarEvents, fullMoonPlan, NFT_TAX, nftBuySignal, openListing, openOffer, sellSignal, stockPlan, TRADE_LIMITS, weekStats } from '../../supabase/functions/_shared/strategy.js';
 import { flower, num } from '../lib/format.js';
 import { useResource } from '../lib/hooks.js';
 import { enablePush, farmSales } from '../lib/push.js';
@@ -36,34 +36,65 @@ function AlertSwitches({ settings, farm, goal }) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  const cats = settings.prefs?.categories ?? {};
+  const optIn = settings.prefs?.optIn ?? {};
+  const [custom, setCustom] = useState('');
   const toggle = (id, v) => setSettings(s => ({
-    prefs: { ...s.prefs, categories: { ...s.prefs.categories, [id]: v } },
+    prefs: { ...s.prefs, optIn: { ...s.prefs.optIn, [id]: v } },
     // Ligar um aviso começa a contar o lucro, se ainda não estava contando.
     ...(v && !s.strategy?.start ? { strategy: { start: Date.now(), balance: Number(farm?.balance ?? 0) } } : {}),
   }));
   async function turnOn() {
     setError(null);
-    if (!settings.farmId) { setError(t('alerts.needFarm')); return; }
+    if (!settings.farmId) { setError(t('alerts.needFarm')); return false; }
     setBusy(true);
     try {
       const endpoint = await enablePush({ farmId: settings.farmId, prefs: settings.prefs });
       setSettings({ pushEndpoint: endpoint });
       toast(t('alerts.enabled'));
+      return true;
     } catch (e) {
       setError(e.message);
+      return false;
     } finally {
       setBusy(false);
     }
   }
+  // Ligar um aviso sem as notificações ativas no aparelho pede a permissão primeiro.
+  async function switchTo(id, v) {
+    if (v && !settings.pushEndpoint && !(await turnOn())) return;
+    toggle(id, v);
+  }
+  // % de lucro: vale para as oportunidades e para a meta da Carteira (mesmo número).
+  const setGoal = g => setSettings({ sellGoal: g });
+  const applyCustom = () => {
+    const v = Number(String(custom).replace(',', '.'));
+    if (v >= 1 && v <= 500) { setGoal(Math.round(v * 10) / 1000); setCustom(''); }
+  };
+  const isPreset = PROFIT_OPTIONS.some(g => Math.abs(g - goal) < 1e-9);
   const rows = [
-    ['sellSignal', 'Flower', t('pr.sellOn'), t('pr.sellOnSub', { goal: Math.round(goal * 100) })],
-    ['buySignal', 'Flower', t('pr.buyOn'), t('pr.buyOnSub')],
+    ['sellSignal', 'Flower', t('pr.sellOn'), t('pr.sellOnSub', { goal: num(goal * 100, 1) })],
+    ['buySignal', 'Flower', t('pr.buyOn'), t('pr.buyOnSub', { goal: num(goal * 100, 1) })],
     ['calendar', 'Duskberry', t('pr.calOn'), t('pr.calOnSub')],
   ];
   return (
     <div className="section">
       <div className="section-head"><h2>{t('pr.alerts')}</h2></div>
+      <div className="card" style={{ marginBottom: 10 }}>
+        <div style={{ fontWeight: 800 }}>{t('pr.goal', { n: num(goal * 100, 1) })}</div>
+        <div className="sub" style={{ margin: '2px 0 10px' }}>{t('pr.goalSub')}</div>
+        <div className="chip-row" style={{ flexWrap: 'wrap' }}>
+          {PROFIT_OPTIONS.map(g => (
+            <button key={g} className="chip" aria-pressed={Math.abs(g - goal) < 1e-9} onClick={() => setGoal(g)}>+{Math.round(g * 100)}%</button>
+          ))}
+          {!isPreset && <button className="chip" aria-pressed>+{num(goal * 100, 1)}%</button>}
+          <span className="row" style={{ gap: 6 }}>
+            <input className="input goal-input" inputMode="decimal" value={custom} placeholder={t('pr.goalOther')} aria-label={t('pr.goalOther')}
+              onChange={e => setCustom(e.target.value.replace(/[^\d.,]/g, ''))} onKeyDown={e => e.key === 'Enter' && applyCustom()} />
+            <button className="btn btn-ghost small" onClick={applyCustom} disabled={!custom}>OK</button>
+          </span>
+        </div>
+      </div>
+      {settings.prefs?.enabled === false && <Notice>{t('pr.paused')}</Notice>}
       {!settings.pushEndpoint && (
         <div className="card row" style={{ marginBottom: 10 }}>
           <Icon name="bell" width="24" height="24" />
@@ -77,7 +108,7 @@ function AlertSwitches({ settings, farm, goal }) {
           <div key={id} className="pref">
             <ItemImg name={img} size={28} />
             <div className="grow"><div className="title">{title}</div><div className="sub">{sub}</div></div>
-            <Switch checked={cats[id] !== false && settings.prefs?.enabled !== false} onChange={v => toggle(id, v)} label={title} disabled={settings.prefs?.enabled === false} />
+            <Switch checked={optIn[id] === true && settings.prefs?.enabled !== false} onChange={v => switchTo(id, v)} label={title} disabled={busy} />
           </div>
         ))}
       </div>
@@ -138,7 +169,10 @@ function Result({ farm, settings, sales, positions, txs }) {
   );
 }
 
-/** O que vender: estoque parado, posições que bateram a meta e NFTs seus acima da média. */
+/**
+ * O que vender. Em cima, só as oportunidades TOP (acima do % de lucro escolhido e com ganho de
+ * verdade em FLOWER); embaixo, recolhido, o estoque todo com o lote e o líquido de cada item.
+ */
 function SellList({ farm, plan, positions, nftRows, sales, goal }) {
   const t = useT();
   const [all, setAll] = useState(false);
@@ -149,67 +183,114 @@ function SellList({ farm, plan, positions, nftRows, sales, goal }) {
     if (soldToday(name)) return <Status>{t('pr.status.sold')}</Status>;
     return null;
   };
+  const g = num(goal * 100, 1);
   const targets = positions.filter(p => p.price > 0 && p.qty > 0 && p.m.target > 0).sort((a, b) => b.price / b.m.target - a.price / a.m.target);
-  const list = all ? plan.stock : plan.stock.slice(0, 8);
-  const sig = r => (r.sell ? <span className="tag sell-tag">{t('pr.sig.sell')} {pct(r.above)}</span>
+  const hits = targets.filter(p => p.price >= p.m.target && p.m.profit >= TOP.targetProfit);
+  const topStock = plan.stock.filter(r => r.top).sort((a, b) => b.extra - a.extra);
+  const topNft = nftRows.filter(r => r.sell && r.extra >= TOP.nftExtra);
+  const topCount = hits.length + topStock.length + topNft.length;
+  const sig = r => (r.sell ? <span className="tag sell-tag">{pct(r.above)}</span>
     : r.hold ? <span className="tag dim-tag">{t('pr.sig.hold')} {pct(r.above)}</span>
-      : r.above != null ? <span className="tag">{t('pr.sig.ok')} {pct(r.above)}</span> : <span className="tag">{t('pr.noSignal')}</span>);
+      : r.above != null ? <span className="tag">{r.above >= 0.05 ? t('pr.sig.above') : t('pr.sig.ok')} {pct(r.above)}</span> : <span className="tag">{t('pr.noSignal')}</span>);
   return (
     <div className="section">
       <div className="section-head">
-        <h2>{t('pr.sellNow')}</h2>
-        <span className="count">{t('pr.stock', { f: flower(plan.stockTotal) })}</span>
+        <h2>{t('pr.topTitle')}</h2>
+        <span className="count">{t('pr.topCriteria', { g })}</span>
       </div>
-      {targets.length > 0 && (
-        <>
-          <h3 className="pref-group-title">{t('pr.targets', { goal: Math.round(goal * 100) })}</h3>
-          <div className="list" style={{ marginBottom: 12 }}>
-            {targets.map(p => {
-              const hit = p.price >= p.m.target;
-              return (
-                <div key={p.item} className="list-row">
-                  <div className="thumb"><ItemImg name={p.item} size={28} /></div>
-                  <div className="grow">
-                    <div className="title">{p.item} {hit ? <span className="tag sell-tag">{t('pr.sig.target')}</span> : null} {status(p.item)}</div>
-                    <div className="sub">{t('pr.targetLine', { target: price(p.m.target), avg: price(p.avgUnit), now: price(p.price) })}</div>
-                  </div>
-                  <div className="val"><strong className={tone(p.m.profit)}>{signedF(p.m.profit)}</strong><small>{pct(p.m.pct)}</small></div>
-                </div>
-              );
-            })}
-          </div>
-        </>
-      )}
-      {plan.stock.length === 0 ? <p className="hint">{t('pr.noStock')}</p> : (
-        <div className="list">
-          {list.map(r => (
-            <div key={r.name} className="list-row">
+      {topCount === 0 ? (
+        <div className="card row" style={{ marginBottom: 12 }}>
+          <ItemImg name="Flower" size={28} />
+          <div className="grow"><div style={{ fontWeight: 800 }}>{t('pr.topNone')}</div><div className="sub">{t('pr.topNoneSub', { g })}</div></div>
+        </div>
+      ) : (
+        <div className="list" style={{ marginBottom: 12 }}>
+          {hits.map(p => (
+            <div key={`t:${p.item}`} className="list-row">
+              <div className="thumb"><ItemImg name={p.item} size={28} /></div>
+              <div className="grow">
+                <div className="title">{p.item} <span className="tag sell-tag">{t('pr.sig.target')}</span> {status(p.item)}</div>
+                <div className="sub">{t('pr.targetLine', { target: price(p.m.target), avg: price(p.avgUnit), now: price(p.price) })}</div>
+              </div>
+              <div className="val"><strong className="leaf">{signedF(p.m.profit)}</strong><small>{pct(p.m.pct)}</small></div>
+            </div>
+          ))}
+          {topStock.map(r => (
+            <div key={`s:${r.name}`} className="list-row">
               <div className="thumb"><ItemImg name={r.name} size={28} /></div>
               <div className="grow">
                 <div className="title">{num(r.qty, 1)} {r.name} {sig(r)} {status(r.name)}</div>
                 <div className="sub">{t('pr.lot', { lot: num(r.lot, 0), price: price(r.price), net: flower(r.lotNet) })}{r.lots > 1 ? ` · ${t('pr.lots', { n: r.lots })}` : ''}</div>
               </div>
-              <div className="val"><strong>{flower(r.total)}</strong><small>FLOWER</small></div>
+              <div className="val"><strong className="leaf">{signedF(r.extra)}</strong><small>{t('pr.vsAvg')}</small></div>
+            </div>
+          ))}
+          {topNft.map(r => (
+            <div key={`n:${r.key}`} className="list-row">
+              <div className="thumb"><ItemImg name={r.name} size={28} /></div>
+              <div className="grow">
+                <div className="title">{r.name} {sig(r)} {status(r.name)}</div>
+                <div className="sub">{t('pr.nftLine', { floor: flower(r.floor), net: flower(r.floor * (1 - NFT_TAX)) })}</div>
+              </div>
+              <div className="val"><strong className="leaf">{signedF(r.extra)}</strong><small>{t('pr.vsAvg')}</small></div>
             </div>
           ))}
         </div>
       )}
-      {plan.stock.length > 8 && <button className="link-btn" style={{ marginTop: 8 }} onClick={() => setAll(v => !v)}>{all ? t('pr.less') : t('pr.more', { n: plan.stock.length - 8 })}</button>}
-      {nftRows.length > 0 && (
+
+      <button className="btn btn-ghost btn-block" onClick={() => setAll(v => !v)} aria-expanded={all}>
+        {all ? t('pr.stockHide') : t('pr.stockShow', { n: plan.stock.length, f: flower(plan.stockTotal) })}
+      </button>
+      {all && (
         <>
-          <h3 className="pref-group-title" style={{ marginTop: 14 }}>{t('pr.nftSell')}</h3>
-          <div className="list">
-            {nftRows.map(r => (
-              <div key={r.key} className="list-row">
-                <div className="thumb"><ItemImg name={r.name} size={28} /></div>
-                <div className="grow">
-                  <div className="title">{r.name} {sig(r)} {status(r.name)}</div>
-                  <div className="sub">{t('pr.nftLine', { floor: flower(r.floor), net: flower(r.floor * (1 - NFT_TAX)) })}</div>
+          {plan.stock.length === 0 ? <p className="hint" style={{ marginTop: 10 }}>{t('pr.noStock')}</p> : (
+            <div className="list" style={{ marginTop: 10 }}>
+              {plan.stock.map(r => (
+                <div key={r.name} className="list-row">
+                  <div className="thumb"><ItemImg name={r.name} size={28} /></div>
+                  <div className="grow">
+                    <div className="title">{num(r.qty, 1)} {r.name} {sig(r)} {status(r.name)}</div>
+                    <div className="sub">{t('pr.lot', { lot: num(r.lot, 0), price: price(r.price), net: flower(r.lotNet) })}{r.lots > 1 ? ` · ${t('pr.lots', { n: r.lots })}` : ''}</div>
+                  </div>
+                  <div className="val"><strong>{flower(r.total)}</strong><small>FLOWER</small></div>
                 </div>
-                <div className="val"><strong>{flower(r.floor)}</strong><small>floor</small></div>
+              ))}
+            </div>
+          )}
+          {targets.length > 0 && (
+            <>
+              <h3 className="pref-group-title" style={{ marginTop: 14 }}>{t('pr.targets', { goal: g })}</h3>
+              <div className="list">
+                {targets.map(p => (
+                  <div key={p.item} className="list-row">
+                    <div className="thumb"><ItemImg name={p.item} size={28} /></div>
+                    <div className="grow">
+                      <div className="title">{p.item} {status(p.item)}</div>
+                      <div className="sub">{t('pr.targetLine', { target: price(p.m.target), avg: price(p.avgUnit), now: price(p.price) })}</div>
+                    </div>
+                    <div className="val"><strong className={tone(p.m.profit)}>{signedF(p.m.profit)}</strong><small>{pct(p.m.pct)}</small></div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          )}
+          {nftRows.length > 0 && (
+            <>
+              <h3 className="pref-group-title" style={{ marginTop: 14 }}>{t('pr.nftSell')}</h3>
+              <div className="list">
+                {nftRows.map(r => (
+                  <div key={r.key} className="list-row">
+                    <div className="thumb"><ItemImg name={r.name} size={28} /></div>
+                    <div className="grow">
+                      <div className="title">{r.name} {sig(r)} {status(r.name)}</div>
+                      <div className="sub">{t('pr.nftLine', { floor: flower(r.floor), net: flower(r.floor * (1 - NFT_TAX)) })}</div>
+                    </div>
+                    <div className="val"><strong>{flower(r.floor)}</strong><small>floor</small></div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </>
       )}
     </div>
@@ -217,7 +298,7 @@ function SellList({ farm, plan, positions, nftRows, sales, goal }) {
 }
 
 /** O que comprar: itens e NFTs que a pessoa segue, com o sinal e o reconhecimento da compra. */
-function WatchList({ farm, settings, prices, stats, nfts, history, txs, taxRate }) {
+function WatchList({ farm, settings, prices, stats, nfts, history, txs, taxRate, goal }) {
   const t = useT();
   const [text, setText] = useState('');
   const watch = settings.prefs?.watch ?? [];
@@ -239,11 +320,11 @@ function WatchList({ farm, settings, prices, stats, nfts, history, txs, taxRate 
       const n = nfts.find(x => x.key === w.key);
       const floor = n?.floor ?? 0;
       const st = nftStats(history?.nft?.[w.key], floor);
-      const s = nftBuySignal(floor, st);
+      const s = nftBuySignal(floor, st, goal);
       return { ...w, price: floor, avg7: st.avg7, ...s };
     }
     const p = Number(prices?.p2p?.[w.name] ?? 0);
-    const s = buySignal(p, stats[w.name], taxRate);
+    const s = buySignal(p, stats[w.name], taxRate, goal);
     return { ...w, price: p, avg7: stats[w.name]?.avg7, ...s };
   });
   const bought = w => txs.some(x => x.item === w.name && x.at >= (w.at ?? 0));
@@ -285,7 +366,7 @@ function WatchList({ farm, settings, prices, stats, nfts, history, txs, taxRate 
 /** Próximos eventos do calendário, com o plano da Lua Cheia. */
 function Calendar({ farm, moon }) {
   const t = useT();
-  const events = calendarEvents(farm).slice(0, 6);
+  const events = calendarEvents(farm).slice(0, 3);
   const when = at => {
     const d = Math.floor((at - Date.now()) / DAY);
     const date = new Date(at).toLocaleString(locale(getSettings().lang), { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
@@ -339,26 +420,29 @@ export default function Profit({ data, settings }) {
   }, [serverSales, farm]);
 
   const plan = useMemo(() => {
-    const stock = stockPlan(farm, prices?.p2p, stats, taxRate);
+    const stock = stockPlan(farm, prices?.p2p, stats, taxRate, goal);
     return { stock, stockTotal: stock.reduce((s, r) => s + r.total, 0) };
-  }, [farm, prices, stats, taxRate]);
+  }, [farm, prices, stats, taxRate, goal]);
   const moon = useMemo(() => fullMoonPlan(farm, prices?.p2p, stats, taxRate), [farm, prices, stats, taxRate]);
   const nftRows = useMemo(() => {
     const owned = ownedNfts(farm, nfts);
     return nfts.filter(n => owned.has(n.key) && n.floor * (1 - NFT_TAX) >= 1).map(n => {
       const st = nftStats(history?.nft?.[n.key], n.floor);
-      return { ...n, ...sellSignal(n.floor, st) };
+      const qty = owned.get(n.key) ?? 1;
+      // Quanto vender agora rende a mais que vender pelo floor médio de 7 dias (já sem os 10%).
+      const extra = st.avg7 > 0 ? qty * (n.floor - st.avg7) * (1 - NFT_TAX) : null;
+      return { ...n, qty, extra, ...sellSignal(n.floor, st, goal) };
     }).sort((a, b) => Number(b.sell) - Number(a.sell) || b.floor - a.floor).slice(0, 12);
-  }, [farm, nfts, history]);
+  }, [farm, nfts, history, goal]);
 
   if (!farm) return <Notice>{t('market.needFarm')}</Notice>;
   return (
     <>
       <AlertSwitches settings={settings} farm={farm} goal={goal} />
-      <Result farm={farm} settings={settings} sales={sales} positions={positions} txs={txs} />
-      <Calendar farm={farm} moon={moon} />
       <SellList farm={farm} plan={plan} positions={positions} nftRows={nftRows} sales={sales} goal={goal} />
-      <WatchList farm={farm} settings={settings} prices={prices} stats={stats} nfts={nfts} history={history} txs={txs} taxRate={taxRate} />
+      <Result farm={farm} settings={settings} sales={sales} positions={positions} txs={txs} />
+      <WatchList farm={farm} settings={settings} prices={prices} stats={stats} nfts={nfts} history={history} txs={txs} taxRate={taxRate} goal={goal} />
+      <Calendar farm={farm} moon={moon} />
       <p className="hint" style={{ marginTop: 16 }}>{t('pr.disclaimer')}</p>
     </>
   );

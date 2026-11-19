@@ -460,7 +460,7 @@ function PositionSheet({ pos, m, cur, curUsd, history, names, taxRate, goal, onC
   );
 }
 
-const GOALS = [0.05, 0.1, 0.2, 0.3];
+const GOALS = [0.05, 0.1, 0.15, 0.2, 0.3, 0.5];
 
 /**
  * Carteira: compras (ofertas aceitas, compras detectadas e as anotadas à mão) agrupadas em posições
@@ -474,7 +474,7 @@ export function usePositions({ farm, land, prices, settings, exchange }) {
   const { data: nfts } = useNfts();
   const priceOf = usePriceLookup(prices, nfts);
   const tax = useMemo(() => resourceTax(farm, land), [farm, land]);
-  const goal = settings.sellGoal ?? 0.1;
+  const goal = settings.sellGoal ?? 0.15;
   const curUsd = Number(exchange?.sfl?.usd ?? 0);
 
   // Todas as compras: ofertas aceitas (servidor + fazenda) e as registradas à mão, com as edições por cima.

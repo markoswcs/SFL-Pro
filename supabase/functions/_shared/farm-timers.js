@@ -77,6 +77,10 @@ export const CATEGORIES = [
 
 export const CATEGORY_BY_ID = Object.fromEntries(CATEGORIES.map(c => [c.id, c]));
 
+// Avisos da aba Lucro: só chegam se a pessoa ligar de propósito (prefs.optIn), nunca por padrão
+// nem pelo "ligar tudo" dos Alertas.
+export const OPT_IN = new Set(['sellSignal', 'buySignal', 'calendar']);
+
 // No mapa = tem coordenadas. O jogo apaga x/y ao remover, mas um item recolocado mantém o removedAt antigo.
 const placed = node => !!node && (node.x !== undefined || (node.removedAt === undefined && node.createdAt !== undefined));
 
@@ -293,13 +297,14 @@ export function mergeInto(g, t) {
 /** Preferências: { enabled, categories: {id: bool}, items: {"cat:Nome": bool} } */
 export function isWanted(prefs, category, name) {
   if (!prefs || prefs.enabled === false) return false;
+  if (OPT_IN.has(category)) return prefs.optIn?.[category] === true && prefs.items?.[`${category}:${name}`] !== false;
   const item = prefs.items?.[`${category}:${name}`];
   if (item !== undefined) return item;
   return prefs.categories?.[category] !== false;
 }
 
 export function defaultPrefs() {
-  return { enabled: true, categories: Object.fromEntries(CATEGORIES.map(c => [c.id, true])), items: {} };
+  return { enabled: true, categories: Object.fromEntries(CATEGORIES.map(c => [c.id, !OPT_IN.has(c.id)])), items: {}, optIn: {} };
 }
 
 export const categoryLabel = (id, lang = 'pt') => (lang === 'en' ? CATEGORY_BY_ID[id]?.en : CATEGORY_BY_ID[id]?.label) ?? id;

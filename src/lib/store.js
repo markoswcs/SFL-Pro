@@ -14,7 +14,7 @@ const DEFAULTS = {
   game: 'sfl',
   yakkaName: '',
   purchases: [],
-  sellGoal: 0.1,
+  sellGoal: 0.15, // % de lucro: meta da Carteira e critério das oportunidades da aba Lucro
   positions: {}, // edição do preço médio e da cotação média por item
   txEdits: {}, // correções em ofertas aceitas (vêm do jogo, não da pessoa)
   txHidden: {},
