@@ -1,5 +1,6 @@
 // API pública do app para gerenciar o push deste aparelho.
 // O endpoint da inscrição é aleatório e secreto; quem o tem controla só aquele aparelho.
+import { cleanPrefs } from '../_shared/prefs.js';
 import { cors, db, FarmError, fetchFarm, json, sendPush, storeTimers, type Device } from '../_shared/server.ts';
 
 const isPushEndpoint = (url: unknown) => {
@@ -12,11 +13,6 @@ const isPushEndpoint = (url: unknown) => {
 };
 
 // Mantém só o formato esperado das preferências, para nada estranho ir parar no banco.
-function cleanPrefs(prefs: any) {
-  const bools = (o: any) => Object.fromEntries(Object.entries(o ?? {}).filter(([k, v]) => typeof v === 'boolean' && k.length < 80).slice(0, 400));
-  const tz = typeof prefs?.tz === 'string' && /^[A-Za-z_]+(\/[A-Za-z0-9_+-]+){0,2}$/.test(prefs.tz) ? prefs.tz : undefined;
-  return { enabled: prefs?.enabled !== false, lang: prefs?.lang === 'en' ? 'en' : 'pt', tz, categories: bools(prefs?.categories), items: bools(prefs?.items) };
-}
 
 async function findDevice(endpoint: unknown) {
   if (!isPushEndpoint(endpoint)) return null;

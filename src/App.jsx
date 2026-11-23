@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { registerSW } from 'virtual:pwa-register';
 import { CATEGORIES, extractTimers, groupTimers } from '../supabase/functions/_shared/farm-timers.js';
 import { itemImage } from '../supabase/functions/_shared/item-image.js';
@@ -126,9 +126,8 @@ function Shell() {
   // Envia as preferências ao servidor um instante depois da última mudança, venha de qual tela vier
   // (Alertas, aba Lucro, ou a Carteira atualizando as posições).
   const prefsKey = JSON.stringify(settings.prefs);
-  const firstPrefs = useRef(true);
+  // Também manda uma vez ao abrir o app, para o servidor nunca ficar com uma versão velha.
   useEffect(() => {
-    if (firstPrefs.current) { firstPrefs.current = false; return; }
     if (!settings.pushEndpoint) return;
     const timer = setTimeout(() => syncPrefs(settings.pushEndpoint, settings.prefs).catch(e => console.error('preferências não sincronizaram', e)), 700);
     return () => clearTimeout(timer);
